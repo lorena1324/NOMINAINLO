@@ -12,7 +12,8 @@ import {
     FileText,
     Briefcase,
     UserCog,
-    ShieldCheck
+    ShieldCheck,
+    CalendarCheck
 } from 'lucide-react'
 
 export default async function DashboardLayout({
@@ -42,6 +43,12 @@ export default async function DashboardLayout({
                             Administración
                         </Button>
                     </Link>
+                    <Link href="/asistencia">
+                        <Button variant="ghost" className="w-full justify-start gap-2">
+                            <CalendarCheck className="h-4 w-4" />
+                            Asistencia diaria
+                        </Button>
+                    </Link>
                     <Link href="/novedades">
                         <Button variant="ghost" className="w-full justify-start gap-2">
                             <FileText className="h-4 w-4" />
@@ -51,7 +58,7 @@ export default async function DashboardLayout({
                     <Link href="/aprobaciones">
                         <Button variant="ghost" className="w-full justify-start gap-2">
                             <ShieldCheck className="h-4 w-4" />
-                            Aprobaciones
+                            Panel de Control
                         </Button>
                     </Link>
                     {isAdmin && (

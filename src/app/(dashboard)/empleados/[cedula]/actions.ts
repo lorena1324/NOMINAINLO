@@ -106,6 +106,68 @@ export async function getAlertasEmpleado(cedula: string) {
         .order('created_at', { ascending: false })
 
     if (error) return []
+    const alertas = data ?? []
+    if (alertas.length === 0) return []
+
+    // Datos de la jornada de cada alerta (para poder corregir desde el perfil)
+    const idsJornada = Array.from(new Set(alertas.map((a) => a.jornada_id).filter(Boolean))) as string[]
+    const jornadaPorId = new Map<string, { entrada: string; estado: string }>()
+    const aprobacionPorJornada = new Map<string, string>()
+    if (idsJornada.length > 0) {
+        const { data: js } = await supabase.from('jornadas').select('id, entrada, estado').in('id', idsJornada)
+        for (const j of js ?? []) jornadaPorId.set(j.id, { entrada: j.entrada, estado: j.estado })
+
+        const { data: aps } = await supabase
+            .from('aprobaciones_extras')
+            .select('id, jornada_id')
+            .eq('estado', 'PENDIENTE')
+            .in('jornada_id', idsJornada)
+        for (const ap of aps ?? []) aprobacionPorJornada.set(ap.jornada_id, ap.id)
+    }
+
+    return alertas
+        .map((a) => ({
+            ...a,
+            jornada: a.jornada_id ? (jornadaPorId.get(a.jornada_id) ?? null) : null,
+            aprobacionId: a.jornada_id ? (aprobacionPorJornada.get(a.jornada_id) ?? null) : null,
+        }))
+        // Se ocultan las alertas que ya se resolvieron (de quincenas anteriores):
+        // jornada sin salida ya corregida, u horas extra ya aprobadas/rechazadas.
+        .filter((a) => {
+            if (a.tipo === 'INCONSISTENTE') return a.jornada?.estado === 'INCONSISTENTE'
+            if (a.tipo === 'EXTRAS_PENDIENTES') return !!a.aprobacionId
+            return true
+        })
+}
+
+/**
+ * Asistencia día a día del empleado en un rango (YYYY-MM-DD): incluye los días
+ * sin marcación ("Sin asistencia") y los días con novedad.
+ */
+export async function getMallaEmpleado(cedula: string, start: string, end: string) {
+    const supabase = await createClient()
+    try {
+        const { construirMallaAsistencia } = await import('@/lib/asistenciaDatos')
+        const malla = await construirMallaAsistencia(supabase, { start, end, cedula })
+        return malla.filas
+    } catch (err) {
+        console.error('[getMallaEmpleado]', err)
+        return []
+    }
+}
+
+/** Correcciones registradas sobre las jornadas del empleado (quién, cuándo, motivo). */
+export async function getCorreccionesEmpleado(cedula: string, limite = 20) {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+        .from('alertas')
+        .select('id, mensaje, created_at')
+        .eq('empleado_id', cedula)
+        .eq('leida', true)
+        .or('mensaje.ilike.Corrección*,mensaje.ilike.*Revisada por*')
+        .order('created_at', { ascending: false })
+        .limit(limite)
+    if (error) return []
     return data ?? []
 }
 

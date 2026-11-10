@@ -272,6 +272,24 @@ export function AdminFilters({ rol }: { rol: string; operacionFija: string | nul
                         <Download className="h-3.5 w-3.5" />
                         <span className="hidden sm:inline">Nómina</span>
                     </Button>
+                    <Button
+                        variant="outline"
+                        title="Todo lo que conviene revisar antes de cerrar la quincena"
+                        onClick={() => {
+                            const params = new URLSearchParams()
+                            params.set('start', start)
+                            params.set('end', end)
+                            if (operacionesSeleccionadas.length > 0) {
+                                params.set('op', operacionesSeleccionadas.join(','))
+                            }
+                            window.open(`/api/reportes/inconsistencias?${params.toString()}`, '_blank')
+                        }}
+                        disabled={!start || !end}
+                        className="h-10 gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
+                    >
+                        <Download className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Inconsistencias</span>
+                    </Button>
                     <ExportPlanosDialog />
                 </div>
             </div>

@@ -39,11 +39,19 @@ export default async function EmpleadosPage() {
                     <h1 className="text-3xl font-bold tracking-tight">Gestión de Usuarios</h1>
                     <p className="text-muted-foreground mt-1">Directorio y creación de personal operativo y administrativo</p>
                 </div>
-                <Link href="/novedades">
-                    <Button variant="outline" className="border-purple-600 text-purple-700 hover:bg-purple-50">
-                        📋 Registro de Novedades
-                    </Button>
-                </Link>
+                <div className="flex flex-wrap gap-2 justify-end">
+                    {/* Plantilla de colaboradores (activos e inactivos) para cruce con RRHH */}
+                    <a href="/api/reportes/colaboradores" target="_blank" rel="noreferrer">
+                        <Button variant="outline" className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+                            ⬇ Descargar colaboradores (Excel)
+                        </Button>
+                    </a>
+                    <Link href="/novedades">
+                        <Button variant="outline" className="border-purple-600 text-purple-700 hover:bg-purple-50">
+                            📋 Registro de Novedades
+                        </Button>
+                    </Link>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">

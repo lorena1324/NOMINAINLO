@@ -11,12 +11,12 @@ import {
 } from "@/components/ui/table"
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Edit2, Ban, CheckCircle, Search, Eye } from 'lucide-react'
+import { Edit2, Ban, CheckCircle, Eye, Trash2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { editarEmpleado, cambiarEstadoEmpleado } from './actions'
+import { editarEmpleado, cambiarEstadoEmpleado, eliminarEmpleado } from './actions'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -77,6 +77,25 @@ export function EmpleadosTable({
             setEditingEmp(null)
             router.refresh()
         }
+    }
+
+    const [deletingEmp, setDeletingEmp] = useState<any>(null)
+    const [isDeleting, setIsDeleting] = useState(false)
+    const esAdmin = rol === 'admin'
+
+    const handleDelete = async () => {
+        if (!deletingEmp) return
+        setIsDeleting(true)
+        const res = await eliminarEmpleado(deletingEmp.id)
+        setIsDeleting(false)
+        if (!res.success) {
+            toast.error(res.error || 'No se pudo eliminar')
+            return
+        }
+        if (res.accion === 'inactivado') toast.warning(res.mensaje, { duration: 8000 })
+        else toast.success(res.mensaje)
+        setDeletingEmp(null)
+        router.refresh()
     }
 
     const toggleStatus = async (emp: any) => {
@@ -172,6 +191,17 @@ export function EmpleadosTable({
                                     >
                                         {emp.status === 'activo' ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
                                     </Button>
+                                    {esAdmin && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                            onClick={() => setDeletingEmp(emp)}
+                                            title="Eliminar (creado por error)"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    )}
                                 </div>
                             </TableCell>
                         </TableRow>
@@ -188,7 +218,15 @@ export function EmpleadosTable({
                         <form onSubmit={handleSave} className="space-y-4 py-4">
                             <div className="space-y-2">
                                 <Label htmlFor="edit-cedula">Cédula</Label>
-                                <Input id="edit-cedula" value={editCedula} onChange={e => setEditCedula(e.target.value)} required />
+                                <Input
+                                    id="edit-cedula"
+                                    value={editCedula}
+                                    onChange={e => setEditCedula(e.target.value.replace(/\D/g, ''))}
+                                    inputMode="numeric"
+                                    maxLength={10}
+                                    required
+                                />
+                                <p className="text-xs text-slate-500">Solo números, entre 6 y 10 dígitos.</p>
                             </div>
 
                             <div className="space-y-2">
@@ -203,7 +241,7 @@ export function EmpleadosTable({
 
                             <div className="space-y-2">
                                 <Label htmlFor="edit-op">Operación *</Label>
-                                <Select value={editOp} onValueChange={setEditOp}>
+                                <Select value={editOp} onValueChange={setEditOp} disabled={!esAdmin}>
                                     <SelectTrigger id="edit-op">
                                         <SelectValue placeholder="Seleccione una operación..." />
                                     </SelectTrigger>
@@ -214,6 +252,11 @@ export function EmpleadosTable({
                                         {operaciones.length === 0 && <SelectItem value="default" disabled>No hay operaciones activas</SelectItem>}
                                     </SelectContent>
                                 </Select>
+                                <p className="text-xs text-slate-500">
+                                    {esAdmin
+                                        ? 'Es la operación (CECO) por defecto con la que marca en el quiosco. El cambio aplica a las próximas marcaciones; las anteriores no se modifican.'
+                                        : 'Solo un administrador puede cambiar la operación (CECO).'}
+                                </p>
                             </div>
 
                             <div className="space-y-2">
@@ -248,6 +291,36 @@ export function EmpleadosTable({
                                 </Button>
                             </div>
                         </form>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={!!deletingEmp} onOpenChange={(open) => !open && setDeletingEmp(null)}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Eliminar colaborador</DialogTitle>
+                    </DialogHeader>
+                    {deletingEmp && (
+                        <div className="space-y-4 text-sm text-slate-700">
+                            <p>
+                                Vas a eliminar a <b>{deletingEmp.nombre}</b> (CC {deletingEmp.id}).
+                            </p>
+                            <ul className="list-disc pl-5 space-y-1 text-slate-600">
+                                <li>Si <b>no tiene marcaciones ni novedades</b>, se elimina definitivamente.</li>
+                                <li>Si <b>ya tiene marcaciones o novedades</b>, no se elimina: queda <b>inactivo</b> para conservar su historial.</li>
+                            </ul>
+                            <div className="flex justify-end gap-2 pt-2">
+                                <Button type="button" variant="outline" onClick={() => setDeletingEmp(null)}>Cancelar</Button>
+                                <Button
+                                    type="button"
+                                    className="bg-red-600 hover:bg-red-700"
+                                    disabled={isDeleting}
+                                    onClick={handleDelete}
+                                >
+                                    {isDeleting ? 'Procesando...' : 'Sí, eliminar'}
+                                </Button>
+                            </div>
+                        </div>
                     )}
                 </DialogContent>
             </Dialog>

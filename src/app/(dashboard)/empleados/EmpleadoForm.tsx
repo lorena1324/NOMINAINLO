@@ -1,6 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
+import { AlertTriangle } from 'lucide-react'
+import type { EmpleadoExistente } from './actions'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -31,6 +34,11 @@ export function EmpleadoForm({
     const [turnoId, setTurnoId] = useState('')
     const [turnos, setTurnos] = useState<Turno[]>([])
     const [turnosLoading, setTurnosLoading] = useState(false)
+    const formRef = useRef<HTMLFormElement>(null)
+    const [aviso, setAviso] = useState<{
+        tipo: 'existente' | 'duplicado'
+        registros: EmpleadoExistente[]
+    } | null>(null)
 
     // Límites razonables para la fecha de nacimiento: entre hace 100 años y hace 16 (edad mínima laboral CO)
     const hoy = new Date()
@@ -59,29 +67,40 @@ export function EmpleadoForm({
 
     async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
         event.preventDefault()
+        await guardar(event.currentTarget as HTMLFormElement, false)
+    }
 
+    async function guardar(form: HTMLFormElement, confirmarDuplicado: boolean) {
         if (!birthdate) {
-            toast.error('Ingresá la fecha de nacimiento.')
+            toast.error('Ingresa la fecha de nacimiento.')
             return
         }
         if (!operacion) {
-            toast.error('Seleccioná una operación.')
+            toast.error('Selecciona una operación.')
             return
         }
 
         setIsLoading(true)
-        const form = event.currentTarget as HTMLFormElement
         const formData = new FormData(form)
         formData.append('birthdate', birthdate)
         formData.append('operacion', operacion)
         if (turnoId) formData.append('turno_id', turnoId)
+        if (confirmarDuplicado) formData.append('confirmar_duplicado', '1')
 
         const result = await crearEmpleado(formData)
 
         setIsLoading(false)
+        setAviso(null)
 
         if (!result.success) {
-            toast.error(result.error)
+            if (result.existente) {
+                // Cédula ya registrada: se muestra el registro existente en lugar de crear otro
+                setAviso({ tipo: 'existente', registros: [result.existente] })
+            } else if (result.posiblesDuplicados?.length) {
+                setAviso({ tipo: 'duplicado', registros: result.posiblesDuplicados })
+            } else {
+                toast.error(result.error)
+            }
         } else {
             toast.success('Empleado registrado exitosamente.')
             form.reset()
@@ -98,11 +117,71 @@ export function EmpleadoForm({
                 <CardTitle className="text-xl">Agregar Nuevo Empleado</CardTitle>
             </CardHeader>
             <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
                     <div className="space-y-2">
                         <Label htmlFor="cedula">Cédula *</Label>
-                        <Input id="cedula" name="cedula" required placeholder="Ingrese la cédula" />
+                        <Input
+                            id="cedula"
+                            name="cedula"
+                            required
+                            placeholder="Solo números, sin puntos"
+                            inputMode="numeric"
+                            minLength={6}
+                            maxLength={10}
+                            onInput={(e) => {
+                                // Solo números: se quitan puntos, espacios y letras al escribir o pegar
+                                e.currentTarget.value = e.currentTarget.value.replace(/\D/g, '')
+                                if (aviso) setAviso(null)
+                            }}
+                        />
+                        <p className="text-xs text-slate-500">Entre 6 y 10 dígitos, sin puntos ni espacios.</p>
                     </div>
+
+                    {aviso && (
+                        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 space-y-2">
+                            <p className="font-semibold flex items-center gap-2">
+                                <AlertTriangle className="h-4 w-4 shrink-0" />
+                                {aviso.tipo === 'existente'
+                                    ? 'Esta cédula ya está registrada'
+                                    : 'Posible duplicado: mismo nombre con otra cédula'}
+                            </p>
+                            <ul className="space-y-1">
+                                {aviso.registros.map((r) => (
+                                    <li key={r.id}>
+                                        <Link href={`/empleados/${r.id}`} className="underline font-medium">
+                                            {r.nombre}
+                                        </Link>{' '}
+                                        · CC {r.id} · {r.operacion ?? 'sin operación'} · {r.status}
+                                    </li>
+                                ))}
+                            </ul>
+                            {aviso.tipo === 'existente' ? (
+                                <p className="text-xs">
+                                    No se creó un registro nuevo. Abre el colaborador existente para revisarlo o reactivarlo.
+                                </p>
+                            ) : (
+                                <div className="flex flex-wrap gap-2 pt-1">
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => setAviso(null)}
+                                    >
+                                        Cancelar y revisar
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        className="bg-amber-600 hover:bg-amber-700"
+                                        disabled={isLoading}
+                                        onClick={() => formRef.current && guardar(formRef.current, true)}
+                                    >
+                                        Es otra persona, crear de todas formas
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     <div className="space-y-2">
                         <Label htmlFor="nombre">Nombre Completo *</Label>

@@ -3,6 +3,32 @@
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile, requireAdminOrCoordinador, getOperationFilter } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
+import { UMBRAL_CIERRE_AUTOMATICO_HORAS, fechaColombiaISO, horaColombia24 } from '@/lib/asistencia'
+
+/** "correo · AAAA-MM-DD HH:MM" — sello de quién y cuándo, para trazabilidad. */
+function sello(email: string): string {
+    const ahora = new Date()
+    return `${email} · ${fechaColombiaISO(ahora)} ${horaColombia24(ahora)}`
+}
+
+function revalidarVistas(empleadoId?: string | null) {
+    revalidatePath('/aprobaciones')
+    revalidatePath('/asistencia')
+    if (empleadoId) revalidatePath(`/empleados/${empleadoId}`)
+}
+
+/** Al resolver unas horas extra, su alerta deja de aparecer como pendiente. */
+async function cerrarAlertaExtras(
+    supabase: Awaited<ReturnType<typeof createClient>>,
+    jornadaId: string | null,
+) {
+    if (!jornadaId) return
+    await supabase
+        .from('alertas')
+        .update({ leida: true })
+        .eq('jornada_id', jornadaId)
+        .eq('tipo', 'EXTRAS_PENDIENTES')
+}
 
 export async function getAprobacionesPendientes() {
     const supabase = await createClient()
@@ -28,6 +54,7 @@ export async function getAprobacionesPendientes() {
     if (error) return { success: false, error: error.message, data: [] }
 
     const resultado = filtroOp.length > 0
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ? (data ?? []).filter((ap: any) => filtroOp.includes(ap.jornadas?.operacion))
         : (data ?? [])
 
@@ -39,18 +66,23 @@ export async function aprobarExtras(aprobacionId: string, nota?: string) {
     const profile = await getUserProfile()
     requireAdminOrCoordinador(profile)
 
-    const { error } = await supabase
+    const { data, error } = await supabase
         .from('aprobaciones_extras')
         .update({
             estado: 'APROBADA',
             coordinador_id: profile.userId,
-            nota_coordinador: nota ?? null,
+            nota_coordinador: `${nota?.trim() || 'Aprobada'} — ${sello(profile.email)}`,
             updated_at: new Date().toISOString(),
         })
         .eq('id', aprobacionId)
+        .eq('estado', 'PENDIENTE')
+        .select('jornada_id, empleado_id')
+        .maybeSingle()
 
     if (error) return { success: false, error: error.message }
-    revalidatePath('/aprobaciones')
+    if (!data) return { success: false, error: 'Esta solicitud ya fue resuelta.' }
+    await cerrarAlertaExtras(supabase, data.jornada_id)
+    revalidarVistas(data.empleado_id)
     return { success: true }
 }
 
@@ -59,18 +91,25 @@ export async function rechazarExtras(aprobacionId: string, nota: string) {
     const profile = await getUserProfile()
     requireAdminOrCoordinador(profile)
 
-    const { error } = await supabase
+    if (!nota?.trim()) return { success: false, error: 'Escribe el motivo del rechazo.' }
+
+    const { data, error } = await supabase
         .from('aprobaciones_extras')
         .update({
             estado: 'RECHAZADA',
             coordinador_id: profile.userId,
-            nota_coordinador: nota,
+            nota_coordinador: `${nota.trim()} — ${sello(profile.email)}`,
             updated_at: new Date().toISOString(),
         })
         .eq('id', aprobacionId)
+        .eq('estado', 'PENDIENTE')
+        .select('jornada_id, empleado_id')
+        .maybeSingle()
 
     if (error) return { success: false, error: error.message }
-    revalidatePath('/aprobaciones')
+    if (!data) return { success: false, error: 'Esta solicitud ya fue resuelta.' }
+    await cerrarAlertaExtras(supabase, data.jornada_id)
+    revalidarVistas(data.empleado_id)
     return { success: true }
 }
 
@@ -79,6 +118,21 @@ export async function getJornadasInconsistentes() {
     const profile = await getUserProfile()
     requireAdminOrCoordinador(profile)
     const filtroOp = getOperationFilter(profile)
+
+    // Cierre automático al consultar: toda jornada abierta por más de 15 h pasa
+    // a "por validar" de inmediato, sin esperar al proceso nocturno.
+    const limite = new Date(Date.now() - UMBRAL_CIERRE_AUTOMATICO_HORAS * 60 * 60 * 1000).toISOString()
+    let vencidas = supabase
+        .from('jornadas')
+        .select('id, empleado_id, operacion')
+        .eq('estado', 'ABIERTO')
+        .lt('entrada', limite)
+    if (filtroOp.length > 0) vencidas = vencidas.in('operacion', filtroOp)
+    const { data: porCerrar } = await vencidas
+    if (porCerrar && porCerrar.length > 0) {
+        const { marcarCierreAutomatico } = await import('@/lib/jornadas')
+        for (const j of porCerrar) await marcarCierreAutomatico(j)
+    }
 
     let query = supabase
         .from('jornadas')
@@ -103,23 +157,72 @@ export async function getJornadasInconsistentes() {
     return { success: true, data: data ?? [] }
 }
 
-export async function corregirInconsistente(jornadaId: string, horaSalidaISO: string) {
+/**
+ * Corrige una jornada sin salida (cierre automático o abierta) registrando la
+ * hora real de salida. El motivo es obligatorio y queda guardado junto con el
+ * usuario, la fecha y la hora de la corrección.
+ */
+export async function corregirInconsistente(jornadaId: string, horaSalidaISO: string, motivo: string) {
     const supabase = await createClient()
     const profile = await getUserProfile()
     requireAdminOrCoordinador(profile)
 
+    if (!motivo?.trim()) return { success: false, error: 'Escribe el motivo de la corrección.' }
+    const salida = new Date(horaSalidaISO)
+    if (Number.isNaN(salida.getTime())) return { success: false, error: 'La hora de salida no es válida.' }
+
+    // El coordinador solo corrige jornadas de su operación
+    const filtroOp = getOperationFilter(profile)
+    if (filtroOp.length > 0) {
+        const { data: j } = await supabase.from('jornadas').select('operacion').eq('id', jornadaId).maybeSingle()
+        if (!j || !filtroOp.includes(j.operacion)) {
+            return { success: false, error: 'Solo puedes corregir jornadas de tu operación.' }
+        }
+    }
+
     const { corregirJornadaInconsistente } = await import('@/lib/jornadas')
-    const { data, error } = await corregirJornadaInconsistente(jornadaId, new Date(horaSalidaISO))
+    const { data, error } = await corregirJornadaInconsistente(jornadaId, salida, {
+        autor: profile.email,
+        motivo: motivo.trim(),
+    })
     if (error || !data) return { success: false, error: error ?? 'Error al corregir jornada' }
 
-    // corregirJornadaInconsistente ya marca las alertas INCONSISTENTE como leídas,
-    // pero lo repetimos por seguridad para cualquier alerta remanente.
-    await supabase
-        .from('alertas')
-        .update({ leida: true })
-        .eq('jornada_id', jornadaId)
-        .eq('tipo', 'INCONSISTENTE')
+    revalidarVistas(data.empleado_id)
+    return { success: true }
+}
 
-    revalidatePath('/aprobaciones')
+/**
+ * Marca como revisada una alerta informativa (por ejemplo "Jornada >12h").
+ * Guarda quién la revisó, cuándo y la justificación.
+ */
+export async function marcarAlertaRevisada(alertaId: string, motivo: string) {
+    const supabase = await createClient()
+    const profile = await getUserProfile()
+    requireAdminOrCoordinador(profile)
+
+    if (!motivo?.trim()) return { success: false, error: 'Escribe la justificación.' }
+
+    const { data: alerta } = await supabase
+        .from('alertas')
+        .select('id, mensaje, empleado_id, operacion')
+        .eq('id', alertaId)
+        .maybeSingle()
+    if (!alerta) return { success: false, error: 'La alerta no existe.' }
+
+    const filtroOp = getOperationFilter(profile)
+    if (filtroOp.length > 0 && alerta.operacion && !filtroOp.includes(alerta.operacion)) {
+        return { success: false, error: 'Solo puedes gestionar alertas de tu operación.' }
+    }
+
+    const { error } = await supabase
+        .from('alertas')
+        .update({
+            leida: true,
+            mensaje: `${alerta.mensaje ?? ''} | Revisada por ${sello(profile.email)}. Justificación: ${motivo.trim()}`,
+        })
+        .eq('id', alertaId)
+
+    if (error) return { success: false, error: error.message }
+    revalidarVistas(alerta.empleado_id)
     return { success: true }
 }

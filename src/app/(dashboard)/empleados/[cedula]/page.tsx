@@ -9,6 +9,8 @@ import {
     getAlertasEmpleado,
     getSemanaDominicalActual,
     getTurnoOperacion,
+    getMallaEmpleado,
+    getCorreccionesEmpleado,
 } from './actions'
 import { calcularHorasUsuarioEnPeriodo } from '@/lib/reportes'
 import { obtenerBolsaHoras } from '@/lib/jornadas'
@@ -50,7 +52,14 @@ export default async function EmpleadoDetallePage({
     const mesInicio = new Date(year, month, 1)
     const mesFin = new Date(year, month + 1, 0, 23, 59, 59, 999)
 
+    // Rango del mes en días calendario (hora Colombia) para la malla día a día
+    const mm = String(month + 1).padStart(2, '0')
+    const diaInicio = `${year}-${mm}-01`
+    const diaFin = `${year}-${mm}-${String(new Date(Date.UTC(year, month + 1, 0)).getUTCDate()).padStart(2, '0')}`
+
     const [
+        dias,
+        correcciones,
         jornadasMes,
         novedades,
         horasMes,
@@ -61,12 +70,14 @@ export default async function EmpleadoDetallePage({
         semanaDominical,
         configOperacion,
     ] = await Promise.all([
+        getMallaEmpleado(cedula, diaInicio, diaFin),
+        getCorreccionesEmpleado(cedula),
         getJornadasRango(cedula, mesInicio.toISOString(), mesFin.toISOString()),
         getNovedadesEmpleado(cedula),
         calcularHorasUsuarioEnPeriodo(cedula, mesInicio, mesFin).catch(() => null),
         obtenerBolsaHoras(cedula).catch(() => 0),
         getMovimientosBolsa(cedula, 15),
-        getAprobacionesEmpleado(cedula, 10),
+        getAprobacionesEmpleado(cedula, 30),
         getAlertasEmpleado(cedula),
         getSemanaDominicalActual(cedula),
         getTurnoOperacion(empleado.operacion),
@@ -75,6 +86,9 @@ export default async function EmpleadoDetallePage({
     return (
         <EmpleadoDetalleClient
             empleado={empleado}
+            dias={dias}
+            correcciones={correcciones}
+            diasRango={{ inicio: diaInicio, fin: diaFin }}
             jornadasMes={jornadasMes}
             novedades={novedades}
             horasMes={horasMes}

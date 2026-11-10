@@ -1,11 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { toColombiaTime } from '@/lib/calculoHoras'
+import { UMBRAL_CIERRE_AUTOMATICO_HORAS } from '@/lib/asistencia'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const UMBRAL_INCONSISTENTE_HORAS = 16
+// Cierre automático: jornadas abiertas por más de 15 h (ver src/lib/asistencia.ts)
+const UMBRAL_INCONSISTENTE_HORAS = UMBRAL_CIERRE_AUTOMATICO_HORAS
 const MINUTOS_SEMANA_PACTADOS = 44 * 60 // 2640
 
 /**
@@ -59,13 +61,14 @@ export async function GET(request: NextRequest) {
                 .from('jornadas')
                 .update({ estado: 'INCONSISTENTE' })
                 .eq('id', j.id)
+                .eq('estado', 'ABIERTO')
 
             await supabase.from('alertas').insert({
                 tipo: 'INCONSISTENTE',
                 empleado_id: j.empleado_id,
                 jornada_id: j.id,
                 operacion: j.operacion,
-                mensaje: `Jornada abierta por más de ${UMBRAL_INCONSISTENTE_HORAS}h sin salida registrada.`,
+                mensaje: `Cierre automático: jornada abierta por más de ${UMBRAL_INCONSISTENTE_HORAS}h sin salida registrada.`,
             })
 
             inconsistentes.push(j.id)

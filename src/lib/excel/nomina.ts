@@ -5,12 +5,12 @@ import ExcelJS from 'exceljs'
 // ════════════════════════════════════════════════════════════════════
 
 export interface LineaNomina {
-    fecha: string              // "miércoles, abril 01, 2026"
+    fecha: Date                // fecha real (medianoche UTC) — Excel la muestra en formato largo
     cargo: string
     cedula: string
     nombre: string
     horaIn: number             // hora entera truncada (6, 14, 22)
-    horaOut: number            // hora entera truncada
+    horaOut: number | null     // hora entera truncada; null = salida pendiente
     almuerzo: number           // horas enteras (0 o 1)
     horas: number              // OUT - IN (directo, entero, consistente)
     extraDiurna: number        // Math.round(minutos/60)
@@ -25,7 +25,26 @@ export interface LineaNomina {
     detalleOperacion: string
     novedad: string
     detalleNovedad: string
+    // ─── Columnas de control (al final, no alteran el formato original) ───
+    estado: string             // Asistió / Sin asistencia / Novedad / Pendiente / Cierre automático
+    domingo: boolean
+    festivo: boolean
+    inasistencia: boolean
+    retardoMin: number | null  // minutos de retardo; null = sin turno para comparar
+    turno: string
+    validar: string            // excepciones que el coordinador debe revisar
 }
+
+export interface RetardoResumen {
+    cedula: string
+    nombre: string
+    operacion: string
+    cantidad: number
+    minutos: number
+}
+
+/** Formato "fecha larga" de Excel en español: lunes, 3 de noviembre de 2026 */
+export const FORMATO_FECHA_LARGA = '[$-240A]dddd, d" de "mmmm" de "yyyy'
 
 export interface TarifaConCodigo {
     tipo_hora: string
@@ -87,6 +106,7 @@ const ALIGN_CENTER: Partial<ExcelJS.Alignment> = { horizontal: 'center', vertica
 export async function generarExcelNomina(
     lineas: LineaNomina[],
     tarifas: TarifaConCodigo[],
+    retardos: RetardoResumen[] = [],
 ): Promise<Buffer> {
     const wb = new ExcelJS.Workbook()
     wb.creator = 'Inlotrans Asistencia'
@@ -98,7 +118,7 @@ export async function generarExcelNomina(
     // I=H.E.D, J=H.E.N, K=E.F.D, L=E.F.N, M=R.N, N=R.F.N, O=R.F,
     // P=OPERACION, Q=CENTRO COSTO, R=DETALLE OP, S=NOVEDAD, T=DETALLE NOV
     ws.columns = [
-        { key: 'fecha',                width: 28 },
+        { key: 'fecha',                width: 34 },
         { key: 'cargo',                width: 18 },
         { key: 'cedula',               width: 16 },
         { key: 'nombre',               width: 35 },
@@ -118,6 +138,13 @@ export async function generarExcelNomina(
         { key: 'detalleOperacion',     width: 20 },
         { key: 'novedad',              width: 22 },
         { key: 'detalleNovedad',       width: 30 },
+        { key: 'estado',               width: 30 },
+        { key: 'domingo',              width: 11 },
+        { key: 'festivo',              width: 11 },
+        { key: 'inasistencia',         width: 14 },
+        { key: 'retardoMin',           width: 15 },
+        { key: 'turno',                width: 18 },
+        { key: 'validar',              width: 55 },
     ]
 
     // ─── Fila 1: Grupo headers ──────────────────────────────────
@@ -177,6 +204,7 @@ export async function generarExcelNomina(
         ...tipoHeaders,
         'OPERACIÓN', 'CENTRO DE COSTO', 'DETALLE DE LA OPERACIÓN',
         'NOVEDAD', 'DETALLE DE LA NOVEDAD',
+        'ESTADO', 'DOMINGO', 'FESTIVO', 'INASISTENCIA', 'RETARDO (MIN)', 'TURNO', 'POR VALIDAR',
     ]
     subHeaders.forEach((h, i) => {
         const cell = row3.getCell(i + 1)
@@ -232,17 +260,32 @@ export async function generarExcelNomina(
             linea.detalleOperacion,
             linea.novedad,
             linea.detalleNovedad,
+            linea.estado,
+            linea.domingo ? 'SI' : 'NO',
+            linea.festivo ? 'SI' : 'NO',
+            linea.inasistencia ? 'SI' : 'NO',
+            linea.retardoMin,
+            linea.turno,
+            linea.validar,
         ])
+        // Fecha real de Excel (permite ordenar y filtrar por fecha) y cédula como texto
+        row.getCell(1).numFmt = FORMATO_FECHA_LARGA
+        row.getCell(3).numFmt = '@'
 
         row.font = FONT_DEFAULT
         row.alignment = { vertical: 'middle' }
         for (let c = 5; c <= 15; c++) {
             row.getCell(c).alignment = ALIGN_CENTER
         }
+        for (let c = 22; c <= 25; c++) {
+            row.getCell(c).alignment = ALIGN_CENTER
+        }
+        if (linea.inasistencia) row.getCell(21).font = { ...FONT_DEFAULT, bold: true, color: { argb: 'FFC00000' } }
+        if (linea.validar) row.getCell(27).font = { ...FONT_DEFAULT, color: { argb: 'FFC00000' } }
 
         // Acumular totales
         totales.horaIn += linea.horaIn
-        totales.horaOut += linea.horaOut
+        totales.horaOut += linea.horaOut ?? 0
         totales.almuerzo += linea.almuerzo
         totales.horas += linea.horas
         totales.extraDiurna += linea.extraDiurna
@@ -380,8 +423,33 @@ export async function generarExcelNomina(
     // ─── Auto-filter en headers ─────────────────────────────────
     ws.autoFilter = {
         from: { row: 3, column: 1 },
-        to: { row: 3, column: 20 },
+        to: { row: 3, column: 27 },
     }
+
+    // ─── Hoja 2: Retardos por colaborador ───────────────────────
+    const wsRet = wb.addWorksheet('Retardos', { views: [{ state: 'frozen', ySplit: 1 }] })
+    wsRet.columns = [
+        { header: 'CEDULA', key: 'cedula', width: 16 },
+        { header: 'NOMBRE', key: 'nombre', width: 38 },
+        { header: 'OPERACIÓN', key: 'operacion', width: 26 },
+        { header: 'N° DE RETARDOS', key: 'cantidad', width: 18 },
+        { header: 'TOTAL MINUTOS', key: 'minutos', width: 16 },
+    ]
+    wsRet.getRow(1).eachCell((cell) => {
+        cell.font = FONT_HEADER
+        cell.fill = FILL_RED
+        cell.alignment = ALIGN_CENTER
+        cell.border = BORDER_THIN
+    })
+    for (const r of retardos) {
+        const row = wsRet.addRow(r)
+        row.font = FONT_DEFAULT
+        row.getCell(1).numFmt = '@'
+    }
+    if (retardos.length === 0) {
+        wsRet.addRow({ nombre: 'Sin retardos en el período (o sin turnos configurados para comparar).' })
+    }
+    wsRet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 5 } }
 
     const buffer = await wb.xlsx.writeBuffer()
     return Buffer.from(buffer)

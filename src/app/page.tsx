@@ -18,6 +18,8 @@ export default function KioskoPage() {
   const [nombre, setNombre] = useState('')
   const [tipo, setTipo] = useState<TipoRegistro>('ENTRADA')
   const [operacion, setOperacion] = useState('')
+  // true = el colaborador tiene operación por defecto y marca siempre en ella
+  const [operacionAsignada, setOperacionAsignada] = useState(false)
   const [estadoTurno, setEstadoTurno] = useState<EstadoTurno>('sin_turno')
   const [infoTurno, setInfoTurno] = useState<string | null>(null)
   const [tieneInconsistentes, setTieneInconsistentes] = useState(false)
@@ -38,7 +40,7 @@ export default function KioskoPage() {
   useEffect(() => {
     if (!cedula) {
       setNombre('')
-      setOperacion('')
+      setOperacion(''); setOperacionAsignada(false)
       setEstadoTurno('sin_turno')
       setInfoTurno(null)
       setTieneInconsistentes(false)
@@ -49,7 +51,7 @@ export default function KioskoPage() {
       const res = await validarCedula(cedula)
       if (!res.success || !res.data) {
         setNombre('')
-        setOperacion('')
+        setOperacion(''); setOperacionAsignada(false)
         setEstadoTurno('sin_turno')
         setInfoTurno(null)
         toast.error(res.error || 'Cédula no válida')
@@ -57,7 +59,9 @@ export default function KioskoPage() {
       }
 
       setNombre(res.data.nombre)
-      if (res.data.operacion) setOperacion(res.data.operacion)
+      // La operación viene de la ficha del colaborador y no se puede cambiar aquí.
+      setOperacion(res.data.operacion ?? '')
+      setOperacionAsignada(!!res.data.operacion)
 
       const estadoRes = await getEstadoJornada(cedula)
       if (estadoRes.success && estadoRes.data) {
@@ -149,7 +153,7 @@ export default function KioskoPage() {
       setTimeout(() => {
         setCedula('')
         setNombre('')
-        setOperacion('')
+        setOperacion(''); setOperacionAsignada(false)
         setTipo('ENTRADA')
         setEstadoTurno('sin_turno')
         setInfoTurno(null)
@@ -180,7 +184,7 @@ export default function KioskoPage() {
           {tieneInconsistentes && (
             <div className="flex items-center gap-2 mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-800 text-sm">
               <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>Tenés jornadas sin cerrar correctamente. Consultá al coordinador.</span>
+              <span>Tienes una jornada que quedó sin salida y se cerró automáticamente. Avisa a tu coordinador para que registre la hora real.</span>
             </div>
           )}
 
@@ -231,19 +235,35 @@ export default function KioskoPage() {
 
             <div className="space-y-2">
               <Label htmlFor="operacion">Operación</Label>
-              <Select value={operacion} onValueChange={setOperacion}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccione..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {opcionesOp.map(op => (
-                    <SelectItem key={op.id} value={op.nombre}>{op.nombre}</SelectItem>
-                  ))}
-                  {opcionesOp.length === 0 && (
-                    <SelectItem value="cargando" disabled>Cargando operaciones...</SelectItem>
+              {operacionAsignada ? (
+                <>
+                  <Input id="operacion" value={operacion} readOnly disabled className="bg-slate-50 font-medium" />
+                  <p className="text-xs text-slate-500">
+                    Es tu operación asignada. Si no es correcta, avisa a tu coordinador.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Select value={operacion} onValueChange={setOperacion} disabled={!nombre}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={nombre ? 'Seleccione...' : 'Primero ingrese su cédula'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {opcionesOp.map(op => (
+                        <SelectItem key={op.id} value={op.nombre}>{op.nombre}</SelectItem>
+                      ))}
+                      {opcionesOp.length === 0 && (
+                        <SelectItem value="cargando" disabled>Cargando operaciones...</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {nombre && (
+                    <p className="text-xs text-amber-700">
+                      No tienes operación asignada. Elige dónde trabajas hoy y avisa a tu coordinador.
+                    </p>
                   )}
-                </SelectContent>
-              </Select>
+                </>
+              )}
             </div>
 
             <div className="space-y-2">

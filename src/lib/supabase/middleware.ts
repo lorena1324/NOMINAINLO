@@ -9,6 +9,8 @@ function isDashboardRoute(pathname: string): boolean {
     return pathname.startsWith('/empleados')
         || pathname.startsWith('/novedades')
         || pathname.startsWith('/admin')
+        || pathname.startsWith('/asistencia')
+        || pathname.startsWith('/aprobaciones')
 }
 
 export async function updateSession(request: NextRequest) {

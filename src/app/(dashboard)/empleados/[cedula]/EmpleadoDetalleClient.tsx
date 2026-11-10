@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -41,6 +41,10 @@ import {
     ChevronRight,
 } from 'lucide-react'
 import type { ResumenEmpleadoPeriodo } from '@/lib/reportes'
+import type { FilaAsistencia } from '@/lib/asistenciaDatos'
+import { TablaAsistencia } from '@/components/TablaAsistencia'
+import { CorregirJornada, ResolverExtras, RevisarAlerta } from '@/components/AccionesAlerta'
+import { hoyColombiaISO, quincenaDeFecha } from '@/lib/asistencia'
 
 // ═══════════════════════════════════════════════════════════════════════
 // TIPOS
@@ -121,6 +125,16 @@ interface Alerta {
     mensaje: string | null
     leida: boolean
     created_at: string
+    /** Jornada asociada (para registrar la salida real desde la alerta). */
+    jornada?: { entrada: string; estado: string } | null
+    /** Solicitud de horas extra pendiente asociada. */
+    aprobacionId?: string | null
+}
+
+interface Correccion {
+    id: string
+    mensaje: string | null
+    created_at: string
 }
 
 interface SemanaDominical {
@@ -143,6 +157,10 @@ interface Props {
         status: 'activo' | 'inactivo'
     }
     jornadasMes: Jornada[]
+    /** Asistencia día a día del mes, incluidos los días sin marcación. */
+    dias: FilaAsistencia[]
+    correcciones: Correccion[]
+    diasRango: { inicio: string; fin: string }
     novedades: Novedad[]
     horasMes: ResumenEmpleadoPeriodo | null
     bolsaSaldo: number
@@ -233,7 +251,7 @@ const ESTADO_JORNADA_CFG: Record<EstadoJornada, { label: string; cls: string; Ic
     ABIERTO:        { label: 'En curso',        cls: 'bg-blue-100 text-blue-700 border-blue-200',       Icon: Clock },
     CERRADO:        { label: 'Cerrada',         cls: 'bg-emerald-100 text-emerald-700 border-emerald-200', Icon: CheckCircle2 },
     CERRADO_MANUAL: { label: 'Cierre manual',   cls: 'bg-amber-100 text-amber-700 border-amber-200',    Icon: ShieldAlert },
-    INCONSISTENTE:  { label: 'Inconsistente',   cls: 'bg-red-100 text-red-700 border-red-200',          Icon: AlertTriangle },
+    INCONSISTENTE:  { label: 'Cierre automático', cls: 'bg-red-100 text-red-700 border-red-200',        Icon: AlertTriangle },
 }
 
 const ESTADO_APROBACION_CFG: Record<EstadoAprobacion, { label: string; cls: string }> = {
@@ -250,7 +268,7 @@ const MOTIVO_CFG: Record<TipoMovimiento, { label: string; Icon: typeof Plus; ton
 }
 
 const ALERTA_CFG: Record<TipoAlerta, { label: string; cls: string; Icon: typeof AlertTriangle }> = {
-    INCONSISTENTE:     { label: 'Jornada inconsistente',   cls: 'bg-red-50 border-red-300 text-red-800',       Icon: AlertTriangle },
+    INCONSISTENTE:     { label: 'Jornada sin salida (cierre automático)', cls: 'bg-red-50 border-red-300 text-red-800', Icon: AlertTriangle },
     ALERTA_CRITICA:    { label: 'Jornada >12h',            cls: 'bg-orange-50 border-orange-300 text-orange-800', Icon: ShieldAlert },
     EXTRAS_PENDIENTES: { label: 'Extras por aprobar',      cls: 'bg-amber-50 border-amber-300 text-amber-800', Icon: Clock },
 }
@@ -275,6 +293,9 @@ export function EmpleadoDetalleClient(props: Props) {
     const {
         empleado,
         jornadasMes,
+        dias,
+        correcciones,
+        diasRango,
         novedades,
         horasMes,
         bolsaSaldo,
@@ -384,7 +405,7 @@ export function EmpleadoDetalleClient(props: Props) {
                     valor={String(jornadasMes.length)}
                     subtitulo={
                         jornadasInconsistentes > 0
-                            ? `${jornadasInconsistentes} inconsistente(s)`
+                            ? `${jornadasInconsistentes} sin salida, por validar`
                             : 'Todas correctas'
                     }
                     Icon={Calendar}
@@ -408,7 +429,7 @@ export function EmpleadoDetalleClient(props: Props) {
             <Tabs defaultValue="jornadas" className="w-full">
                 <TabsList className="grid grid-cols-2 md:grid-cols-4 w-full">
                     <TabsTrigger value="jornadas">
-                        Jornadas ({jornadasMes.length})
+                        Asistencia día a día
                     </TabsTrigger>
                     <TabsTrigger value="bolsa">
                         Bolsa ({movimientosBolsa.length})
@@ -422,7 +443,7 @@ export function EmpleadoDetalleClient(props: Props) {
                 </TabsList>
 
                 <TabsContent value="jornadas" className="mt-4">
-                    <JornadasTab jornadas={jornadasMes} />
+                    <HistoricoQuincena dias={dias} diasRango={diasRango} correcciones={correcciones} />
                 </TabsContent>
 
                 <TabsContent value="bolsa" className="mt-4">
@@ -543,20 +564,71 @@ function BannerAlertas({ alertas }: { alertas: Alerta[] }) {
                         <div className="shrink-0 rounded-lg bg-white/70 p-2">
                             <cfg.Icon className="h-5 w-5" />
                         </div>
-                        <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex-1 min-w-0 space-y-3">
                             <p className="font-semibold text-sm leading-tight">
                                 {cfg.label}
                                 <span className="ml-2 text-xs font-normal opacity-75">
-                                    · {items.length} alerta(s) sin leer
+                                    · {items.length} por resolver
                                 </span>
                             </p>
-                            <p className="text-xs opacity-90 leading-relaxed">
-                                {items[0].mensaje ?? 'Revisar con el coordinador.'}
-                            </p>
+                            {/* Cada alerta se resuelve aquí mismo, con motivo obligatorio */}
+                            {items.map((a) => (
+                                <AlertaAccionable key={a.id} alerta={a} />
+                            ))}
                         </div>
                     </div>
                 )
             })}
+        </div>
+    )
+}
+
+function AlertaAccionable({ alerta }: { alerta: Alerta }) {
+    const [abierta, setAbierta] = useState(false)
+
+    const fechaJornada = alerta.jornada?.entrada ? fechaCortaColombia(alerta.jornada.entrada) : null
+    const puedeCorregir = alerta.tipo === 'INCONSISTENTE' && !!alerta.jornada && !!alerta.jornada_id
+    const puedeResolverExtras = alerta.tipo === 'EXTRAS_PENDIENTES' && !!alerta.aprobacionId
+    const textoBoton =
+        alerta.tipo === 'INCONSISTENTE'
+            ? 'Finalizar turno'
+            : alerta.tipo === 'EXTRAS_PENDIENTES'
+                ? 'Aprobar o rechazar'
+                : 'Marcar revisada'
+
+    return (
+        <div className="rounded-lg bg-white/70 border border-white p-3 space-y-2 text-slate-800">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+                <p className="text-xs leading-relaxed">
+                    {fechaJornada && <b>Jornada del {fechaJornada}. </b>}
+                    {alerta.mensaje ?? 'Revisar con el coordinador.'}
+                </p>
+                {!abierta && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs bg-white shrink-0" onClick={() => setAbierta(true)}>
+                        {textoBoton}
+                    </Button>
+                )}
+            </div>
+            {abierta && (
+                <div className="space-y-2">
+                    {puedeCorregir && (
+                        <CorregirJornada
+                            jornadaId={alerta.jornada_id!}
+                            entrada={alerta.jornada!.entrada}
+                            onListo={() => setAbierta(false)}
+                        />
+                    )}
+                    {puedeResolverExtras && (
+                        <ResolverExtras aprobacionId={alerta.aprobacionId!} onListo={() => setAbierta(false)} />
+                    )}
+                    {!puedeCorregir && !puedeResolverExtras && (
+                        <RevisarAlerta alertaId={alerta.id} onListo={() => setAbierta(false)} />
+                    )}
+                    <button className="text-xs text-slate-500 underline" onClick={() => setAbierta(false)}>
+                        Cancelar
+                    </button>
+                </div>
+            )}
         </div>
     )
 }
@@ -779,114 +851,118 @@ function DesgloseMensual({ horasMes }: { horasMes: ResumenEmpleadoPeriodo }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// TAB: JORNADAS
+// TAB: ASISTENCIA DÍA A DÍA (histórico por quincena)
 // ═══════════════════════════════════════════════════════════════════════
 
-function JornadasTab({ jornadas }: { jornadas: Jornada[] }) {
-    if (jornadas.length === 0) {
-        return (
-            <EmptyState
-                icon={<Calendar className="h-10 w-10 text-slate-300" />}
-                titulo="Sin jornadas este mes"
-                subtitulo="Cuando el empleado marque ENTRADA y SALIDA aparecerá acá."
-            />
-        )
-    }
+type FiltroPeriodo = 'q1' | 'q2' | 'mes'
+
+function HistoricoQuincena({
+    dias,
+    diasRango,
+    correcciones,
+}: {
+    dias: FilaAsistencia[]
+    diasRango: { inicio: string; fin: string }
+    correcciones: Correccion[]
+}) {
+    // Por defecto: la quincena en curso si se está viendo el mes actual; si no, la primera.
+    const hoy = hoyColombiaISO()
+    const esMesActual = hoy >= diasRango.inicio && hoy <= diasRango.fin
+    const [periodo, setPeriodo] = useState<FiltroPeriodo>(
+        esMesActual && quincenaDeFecha(hoy).numero === 2 ? 'q2' : 'q1',
+    )
+
+    const prefijoMes = diasRango.inicio.slice(0, 8) // "YYYY-MM-"
+    const corte = `${prefijoMes}15`
+    const visibles = useMemo(
+        () =>
+            dias.filter((f) =>
+                periodo === 'mes' ? true : periodo === 'q1' ? f.fecha <= corte : f.fecha > corte,
+            ),
+        [dias, periodo, corte],
+    )
+
+    const resumen = useMemo(() => {
+        let trabajados = 0, sinAsistencia = 0, novedades = 0, retardos = 0, minutosRetardo = 0, porValidar = 0
+        const fechasTrabajadas = new Set<string>()
+        for (const f of visibles) {
+            if (f.jornada) fechasTrabajadas.add(f.fecha)
+            if (f.inasistencia) sinAsistencia++
+            if (f.estado === 'NOVEDAD') novedades++
+            if (f.estado === 'CIERRE_AUTOMATICO') porValidar++
+            if (f.retardoMin && f.retardoMin > 0) { retardos++; minutosRetardo += f.retardoMin }
+        }
+        trabajados = fechasTrabajadas.size
+        return { trabajados, sinAsistencia, novedades, retardos, minutosRetardo, porValidar }
+    }, [visibles])
+
+    const opciones: { valor: FiltroPeriodo; texto: string }[] = [
+        { valor: 'q1', texto: '1ª quincena (1 al 15)' },
+        { valor: 'q2', texto: `2ª quincena (16 al ${Number(diasRango.fin.slice(8))})` },
+        { valor: 'mes', texto: 'Mes completo' },
+    ]
 
     return (
-        <Card>
-            <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Fecha</TableHead>
-                                <TableHead>Entrada</TableHead>
-                                <TableHead>Salida</TableHead>
-                                <TableHead>Horas pagables</TableHead>
-                                <TableHead>Desglose</TableHead>
-                                <TableHead>Operación</TableHead>
-                                <TableHead>Estado</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {jornadas.map((j) => {
-                                const badge = ESTADO_JORNADA_CFG[j.estado]
-                                return (
-                                    <TableRow key={j.id} className={j.alerta_critica ? 'bg-orange-50/40' : ''}>
-                                        <TableCell className="font-medium">
-                                            {fechaLargaColombia(j.entrada)}
-                                        </TableCell>
-                                        <TableCell className="font-mono text-sm">
-                                            {horaColombia(j.entrada)}
-                                        </TableCell>
-                                        <TableCell className="font-mono text-sm">
-                                            {j.salida ? horaColombia(j.salida) : '—'}
-                                        </TableCell>
-                                        <TableCell className="font-mono font-semibold">
-                                            {fmtMinutos(j.minutos_total)}
-                                            {j.minutos_almuerzo_descontados > 0 && (
-                                                <div className="text-[10px] text-slate-400 font-normal">
-                                                    -{j.minutos_almuerzo_descontados}min almuerzo
-                                                </div>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>
-                                            <JornadaBadges j={j} />
-                                        </TableCell>
-                                        <TableCell className="text-sm text-slate-600">{j.operacion}</TableCell>
-                                        <TableCell>
-                                            <span
-                                                className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${badge.cls}`}
-                                            >
-                                                <badge.Icon className="h-3 w-3" />
-                                                {badge.label}
-                                            </span>
-                                            {j.alerta_critica && (
-                                                <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-orange-700">
-                                                    <ShieldAlert className="h-3 w-3" /> {`>12h`}
-                                                </div>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
-                                )
-                            })}
-                        </TableBody>
-                    </Table>
-                </div>
-            </CardContent>
-        </Card>
+        <div className="space-y-4">
+            <Card>
+                <CardHeader className="pb-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <CardTitle className="text-base">Asistencia día a día</CardTitle>
+                        <div className="inline-flex rounded-lg border bg-slate-50 p-0.5">
+                            {opciones.map((o) => (
+                                <button
+                                    key={o.valor}
+                                    onClick={() => setPeriodo(o.valor)}
+                                    className={`px-3 py-1.5 text-xs rounded-md transition ${
+                                        periodo === o.valor
+                                            ? 'bg-white shadow-sm font-semibold text-slate-900'
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    {o.texto}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-2 text-xs">
+                        <Chip texto={`${resumen.trabajados} día(s) con marcación`} cls="bg-emerald-50 text-emerald-700 border-emerald-200" />
+                        <Chip texto={`${resumen.sinAsistencia} sin asistencia`} cls={resumen.sinAsistencia > 0 ? 'bg-slate-200 text-slate-800 border-slate-300' : 'bg-slate-50 text-slate-500 border-slate-200'} />
+                        <Chip texto={`${resumen.novedades} día(s) con novedad`} cls="bg-purple-50 text-purple-700 border-purple-200" />
+                        <Chip
+                            texto={`${resumen.retardos} retardo(s) · ${resumen.minutosRetardo} min`}
+                            cls={resumen.retardos > 0 ? 'bg-orange-100 text-orange-800 border-orange-300' : 'bg-slate-50 text-slate-500 border-slate-200'}
+                        />
+                        {resumen.porValidar > 0 && (
+                            <Chip texto={`${resumen.porValidar} sin salida, por validar`} cls="bg-red-100 text-red-700 border-red-300" />
+                        )}
+                    </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                    <TablaAsistencia filas={visibles} modo="colaborador" />
+                </CardContent>
+            </Card>
+
+            {correcciones.length > 0 && (
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Correcciones registradas</CardTitle>
+                        <p className="text-xs text-slate-500">Quién corrigió, cuándo y por qué.</p>
+                    </CardHeader>
+                    <CardContent>
+                        <ul className="space-y-2 text-xs text-slate-700">
+                            {correcciones.map((c) => (
+                                <li key={c.id} className="border-l-2 border-slate-300 pl-3">{c.mensaje}</li>
+                            ))}
+                        </ul>
+                    </CardContent>
+                </Card>
+            )}
+        </div>
     )
 }
 
-function JornadaBadges({ j }: { j: Jornada }) {
-    const tipos: { min: number; label: string; cls: string }[] = [
-        { min: j.minutos_extras_ordinarias, label: 'Extra', cls: 'bg-emerald-100 text-emerald-700' },
-        { min: j.minutos_nocturnas, label: 'Noct', cls: 'bg-indigo-100 text-indigo-700' },
-        { min: j.minutos_extras_nocturnas, label: 'Ex Noct', cls: 'bg-pink-100 text-pink-700' },
-        { min: j.minutos_domingos, label: 'Dom', cls: 'bg-blue-100 text-blue-700' },
-        { min: j.minutos_festivos, label: 'Fest', cls: 'bg-amber-100 text-amber-800' },
-        { min: j.minutos_domingos_festivos_nocturnos, label: 'D/F N', cls: 'bg-violet-100 text-violet-700' },
-        { min: j.minutos_extras_dominical_festivo, label: 'Ex D/F', cls: 'bg-orange-100 text-orange-700' },
-        { min: j.minutos_extras_nocturna_dominical_festivo, label: 'Ex D/F N', cls: 'bg-red-100 text-red-700' },
-    ].filter((t) => t.min > 0)
-
-    if (tipos.length === 0) return <span className="text-xs text-slate-400">Solo ordinarias</span>
-
-    return (
-        <div className="flex flex-wrap gap-1.5">
-            {tipos.map((t) => (
-                <span
-                    key={t.label}
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium rounded-md ${t.cls}`}
-                    title={`${t.label}: ${fmtMinutos(t.min)}`}
-                >
-                    <span className="font-semibold">{t.label}</span>
-                    <span className="font-mono tabular-nums opacity-80">{fmtMinutos(t.min)}</span>
-                </span>
-            ))}
-        </div>
-    )
+function Chip({ texto, cls }: { texto: string; cls: string }) {
+    return <span className={`inline-flex px-2.5 py-1 rounded-full border font-medium ${cls}`}>{texto}</span>
 }
 
 // ═══════════════════════════════════════════════════════════════════════

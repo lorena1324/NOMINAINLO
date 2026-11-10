@@ -6,6 +6,11 @@ import {
     toColombiaTime,
     type PeriodosHoras,
 } from '@/lib/calculoHoras'
+import {
+    UMBRAL_CIERRE_AUTOMATICO_HORAS,
+    horaColombia24,
+    fechaColombiaISO,
+} from '@/lib/asistencia'
 
 // ==================================================
 // TIPOS
@@ -60,6 +65,9 @@ export interface SnapshotMinutos {
 }
 
 type Resultado<T> = { data: T | null; error: string | null }
+
+/** Inicio del mensaje con que se guardan las correcciones (sirve para listarlas después). */
+export const PREFIJO_CORRECCION = 'Corrección'
 
 // ==================================================
 // HELPERS
@@ -312,12 +320,57 @@ export async function cerrarJornada(
 }
 
 /**
- * Coordinador corrige una jornada INCONSISTENTE. Ingresa la hora de salida real,
- * el motor recalcula y se ejecuta la liquidación como si hubiera cerrado normal.
+ * Marca una jornada abierta como cierre automático (estado INCONSISTENTE en BD)
+ * y genera la alerta para el coordinador. La entrada no se modifica y las horas
+ * no se liquidan hasta que alguien autorizado registre la salida real.
+ */
+export async function marcarCierreAutomatico(
+    jornada: Pick<Jornada, 'id' | 'empleado_id' | 'operacion'>,
+): Promise<void> {
+    const supabase = await createClient()
+    const { data: actualizada } = await supabase
+        .from('jornadas')
+        .update({ estado: 'INCONSISTENTE' })
+        .eq('id', jornada.id)
+        .eq('estado', 'ABIERTO')
+        .select('id')
+    // Si otro proceso ya la marcó, no duplicamos la alerta
+    if (!actualizada || actualizada.length === 0) return
+
+    await supabase.from('alertas').insert({
+        tipo: 'INCONSISTENTE',
+        empleado_id: jornada.empleado_id,
+        jornada_id: jornada.id,
+        operacion: jornada.operacion,
+        mensaje: `Cierre automático: jornada abierta por más de ${UMBRAL_CIERRE_AUTOMATICO_HORAS}h sin salida registrada.`,
+    })
+}
+
+/** Última salida registrada del empleado (para detectar marcaciones repetidas). */
+export async function obtenerUltimaSalida(cedula: string): Promise<Date | null> {
+    const supabase = await createClient()
+    const { data } = await supabase
+        .from('jornadas')
+        .select('salida')
+        .eq('empleado_id', cedula)
+        .not('salida', 'is', null)
+        .order('salida', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    return data?.salida ? new Date(data.salida) : null
+}
+
+/**
+ * Corrección de una jornada sin salida (cierre automático o todavía abierta).
+ * Quien corrige ingresa la hora de salida real y el motivo; el motor recalcula
+ * y liquida como si hubiera cerrado normal. La entrada nunca se modifica.
+ *
+ * `traza` deja el registro de quién, cuándo y por qué en la tabla de alertas.
  */
 export async function corregirJornadaInconsistente(
     jornadaId: string,
     horaSalidaReal: Date,
+    traza?: { autor: string; motivo: string },
 ): Promise<Resultado<Jornada>> {
     const supabase = await createClient()
 
@@ -325,13 +378,25 @@ export async function corregirJornadaInconsistente(
         .from('jornadas')
         .select('*')
         .eq('id', jornadaId)
-        .eq('estado', 'INCONSISTENTE')
+        .in('estado', ['INCONSISTENTE', 'ABIERTO'])
         .maybeSingle()
     if (errBuscar) return { data: null, error: errBuscar.message }
-    if (!jornada) return { data: null, error: 'Jornada no encontrada o no está INCONSISTENTE.' }
+    if (!jornada) return { data: null, error: 'La jornada no existe o ya fue cerrada.' }
 
     const config = await obtenerConfigOperacion(supabase, jornada.operacion)
     const entrada = new Date(jornada.entrada)
+
+    // Secuencia de horas: la salida debe ser posterior a la entrada y razonable
+    const duracionMin = Math.floor((horaSalidaReal.getTime() - entrada.getTime()) / 60000)
+    if (Number.isNaN(duracionMin) || duracionMin <= 0) {
+        return { data: null, error: 'La salida debe ser posterior a la entrada.' }
+    }
+    if (duracionMin > 24 * 60) {
+        return { data: null, error: 'La jornada no puede durar más de 24 horas. Revisa la hora de salida.' }
+    }
+    if (horaSalidaReal.getTime() > Date.now() + 60000) {
+        return { data: null, error: 'La hora de salida no puede estar en el futuro.' }
+    }
     const snapshot = await calcularSnapshot(entrada, horaSalidaReal, config.minutos_almuerzo)
 
     const jornadaActualizada = await liquidarJornada(supabase, {
@@ -350,6 +415,22 @@ export async function corregirJornadaInconsistente(
         .update({ leida: true })
         .eq('jornada_id', jornadaId)
         .eq('tipo', 'INCONSISTENTE')
+
+    // Trazabilidad: quién corrigió, cuándo, qué salida registró y por qué
+    if (traza) {
+        const ahora = new Date()
+        await supabase.from('alertas').insert({
+            tipo: 'INCONSISTENTE',
+            empleado_id: jornada.empleado_id,
+            jornada_id: jornadaId,
+            operacion: jornada.operacion,
+            leida: true,
+            mensaje:
+                `${PREFIJO_CORRECCION} por ${traza.autor} el ${fechaColombiaISO(ahora)} ${horaColombia24(ahora)}. ` +
+                `Salida real registrada: ${fechaColombiaISO(horaSalidaReal)} ${horaColombia24(horaSalidaReal)}. ` +
+                `Motivo: ${traza.motivo}`,
+        })
+    }
 
     return { data: jornadaActualizada, error: null }
 }
