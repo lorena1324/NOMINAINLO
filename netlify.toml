@@ -1,0 +1,21 @@
+# Despliegue en Netlify.
+# Netlify detecta Next.js y aplica su adaptador oficial automáticamente.
+#
+# Variables de entorno que hay que crear en Netlify
+# (Site configuration → Environment variables):
+#   NEXT_PUBLIC_SUPABASE_URL
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY
+#   SUPABASE_SERVICE_ROLE_KEY
+#   CRON_SECRET   (recomendada: protege el proceso nocturno)
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# El proceso nocturno (cierre automático de jornadas y cierre dominical) lo
+# dispara la función programada netlify/functions/autocierre.mjs.
+[functions]
+  directory = "netlify/functions"

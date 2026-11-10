@@ -12,7 +12,7 @@ Sistema de control de asistencia, liquidación de horas y gestión de nómina pa
 | Base de datos | **Supabase** (PostgreSQL 17) — auth, RLS, API |
 | Estilos | TailwindCSS v4 + shadcn/ui (new-york) + Radix UI |
 | Reportes | ExcelJS (generación de nómina .xlsx) |
-| Hosting | Vercel (incluye CRON diario) |
+| Hosting | Netlify (incluye función programada diaria) |
 | Validación | Zod (server actions) |
 | UI | lucide-react (iconos), sonner (toasts), date-fns |
 
@@ -124,7 +124,7 @@ Algoritmo **por tramos (chunks)** — no itera minuto a minuto. Avanza hasta el 
 
 **Zona horaria**: Colombia = UTC-5 fijo (sin DST). `toColombiaTime(d)` crea un Date "falso" donde `getUTC*` retorna hora local de Bogotá.
 
-**Caches en memoria** (se resetean en cold starts de Vercel):
+**Caches en memoria** (se resetean en cada arranque en frío del servidor):
 - Festivos: API Colombia (`api-colombia.com`), TTL 24h por año, con fallback al último valor cacheado.
 - Tarifas: tabla `tarifas` de Supabase, TTL 5 min, con fallback hardcoded 2026.
 
@@ -272,12 +272,10 @@ La migración convierte la tabla `registros` (eventos ENTRADA/SALIDA del schema 
 
 ### Deploy
 
-El proyecto se deploya en **Vercel**. El cron job está configurado en `vercel.json`:
+El proyecto se deploya en **Netlify** (configuración en `netlify.toml`). El proceso nocturno lo dispara la función programada `netlify/functions/autocierre.mjs`, que todos los días a las 00:00 UTC (19:00 Colombia) llama a `/api/cron/autocierre`:
 
-```json
-{
-  "crons": [{ "path": "/api/cron/autocierre", "schedule": "0 0 * * *" }]
-}
+```js
+export const config = { schedule: '0 0 * * *' }
 ```
 
-Requiere la env var `CRON_SECRET` configurada en Vercel → Settings → Environment Variables para proteger el endpoint.
+Variables de entorno a crear en Netlify → Site configuration → Environment variables: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` y `CRON_SECRET` (protege el endpoint del proceso nocturno).

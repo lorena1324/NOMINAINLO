@@ -11,7 +11,7 @@ Sistema de control de asistencia y liquidación de horas para Inlotrans (logíst
 | Framework     | Next.js 16 (App Router) + React 19 + TypeScript 5 |
 | Estilos       | TailwindCSS v4 + shadcn/ui (`new-york`) + Radix UI |
 | Base de datos | Supabase (Postgres 17) — auth, RLS, storage |
-| Hosting       | Vercel (incluye CRON diario) |
+| Hosting       | Netlify (incluye función programada diaria) |
 | Validación    | Zod (en server actions) |
 | UI varios     | `lucide-react` (iconos), `sonner` (toasts), `date-fns` |
 
@@ -84,7 +84,7 @@ Colombia es UTC-5 fijo (sin DST). La función `toColombiaTime(d)` crea una fecha
 - **Festivos**: consume `https://api-colombia.com/api/v1/Holiday/year/{año}`, TTL 24h por año, con fallback al último valor cacheado si la API falla.
 - **Tarifas**: lee `tarifas` de Supabase, TTL 5 min, con fallback hardcoded 2026.
 
-Ambos se resetean en cold starts de Vercel.
+Ambos se resetean en cada arranque en frío del servidor (Netlify).
 
 ### Casos especiales validados
 
