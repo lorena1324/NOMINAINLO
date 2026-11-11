@@ -4,8 +4,7 @@ import { EmpleadoForm } from './EmpleadoForm'
 import { Button } from '@/components/ui/button'
 import { EmpleadosTable } from './EmpleadosTable'
 import Link from 'next/link'
-import { getOperacionesAdmin } from '../admin/operaciones-actions'
-import { getUserProfile } from '@/lib/auth'
+import { getUserProfile, puedeEditar } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 
 export default async function EmpleadosPage() {
@@ -19,16 +18,22 @@ export default async function EmpleadosPage() {
         .select('*')
         .order('nombre', { ascending: true })
 
-    if (profile.rol === 'coordinador' && profile.operacion_nombre) {
+    if (profile.rol !== 'admin' && profile.operacion_nombre) {
         empleadosQuery.eq('operacion', profile.operacion_nombre)
     }
 
     const { data: empleados } = await empleadosQuery
 
-    const resOps = await getOperacionesAdmin()
-    const allOperaciones = resOps.success && resOps.data ? resOps.data : []
+    // Se consultan directo: getOperacionesAdmin() exige rol admin y hacía fallar
+    // esta pantalla para coordinadores y visualizadores.
+    const { data: opsData } = await supabase
+        .from('operaciones')
+        .select('id, nombre')
+        .order('nombre', { ascending: true })
+    const allOperaciones = (opsData ?? []) as { id: string; nombre: string }[]
+    const soloLectura = !puedeEditar(profile)
 
-    const operaciones = profile.rol === 'coordinador' && profile.operacion_nombre
+    const operaciones = profile.rol !== 'admin' && profile.operacion_nombre
         ? allOperaciones.filter(op => op.nombre === profile.operacion_nombre)
         : allOperaciones
 
@@ -55,14 +60,16 @@ export default async function EmpleadosPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                <div className="col-span-1">
-                    <EmpleadoForm
-                        operaciones={operaciones}
-                        rol={profile.rol}
-                        operacionFija={profile.operacion_nombre}
-                    />
-                </div>
-                <div className="col-span-1 lg:col-span-2">
+                {!soloLectura && (
+                    <div className="col-span-1">
+                        <EmpleadoForm
+                            operaciones={operaciones}
+                            rol={profile.rol}
+                            operacionFija={profile.operacion_nombre}
+                        />
+                    </div>
+                )}
+                <div className={soloLectura ? 'col-span-1 lg:col-span-3' : 'col-span-1 lg:col-span-2'}>
                     <Card>
                         <CardHeader>
                             <CardTitle>Usuarios Registrados ({empleados?.length || 0})</CardTitle>

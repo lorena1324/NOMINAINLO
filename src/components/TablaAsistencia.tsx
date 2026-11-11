@@ -197,6 +197,31 @@ export function TablaAsistencia({
                                         </div>
                                     )}
                                     {j?.alerta_critica && <div className="text-[10px] text-orange-700 mt-1">Jornada &gt;12h</div>}
+                                    {j?.fuera_geocerca && (
+                                        <div
+                                            className="text-[10px] text-rose-700 mt-1 font-medium"
+                                            title={`Entrada: ${j.entrada_distancia_m ?? 'sin ubicación'} m · Salida: ${j.salida_distancia_m ?? 'sin ubicación'} m`}
+                                        >
+                                            Fuera de geocerca
+                                        </div>
+                                    )}
+                                    {j?.marcacion_offline && (
+                                        <div className="text-[10px] text-slate-600 mt-1">Marcó sin conexión</div>
+                                    )}
+                                    {j && (j.foto_entrada || j.foto_salida) && (
+                                        <div className="text-[10px] mt-1 space-x-2">
+                                            {j.foto_entrada && (
+                                                <a className="text-blue-700 underline" href={`/api/fotos?jornada=${j.id}&tipo=entrada`} target="_blank" rel="noreferrer">
+                                                    Foto entrada
+                                                </a>
+                                            )}
+                                            {j.foto_salida && (
+                                                <a className="text-blue-700 underline" href={`/api/fotos?jornada=${j.id}&tipo=salida`} target="_blank" rel="noreferrer">
+                                                    Foto salida
+                                                </a>
+                                            )}
+                                        </div>
+                                    )}
                                     {abierta && j && puedeCorregir && (
                                         <div className="mt-1.5">
                                             {corrigiendo === j.id ? (

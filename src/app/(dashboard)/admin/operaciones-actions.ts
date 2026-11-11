@@ -14,6 +14,10 @@ export type Operacion = {
     limite_horas: 8 | 12
     max_extras_dia: number
     minutos_almuerzo: number
+    /** Geocerca: centro y radio (metros) dentro del cual se acepta la marcación. Vacío = sin geocerca. */
+    latitud?: number | null
+    longitud?: number | null
+    radio_metros?: number | null
     created_at?: string
 }
 
@@ -70,10 +74,34 @@ export const getOperacionesActivas = unstable_cache(
     { revalidate: 300, tags: ['operaciones'] } // Cache de 5 minutos, y le asignamos un tag para forzar la revalidación si creamos una nueva
 )
 
+/** Columnas de geocerca a guardar: los tres datos completos, o los tres vacíos. */
+function geocercaDe(op: Partial<Operacion>) {
+    const lat = Number(op.latitud)
+    const lng = Number(op.longitud)
+    const radio = Number(op.radio_metros)
+    const completa =
+        op.latitud !== null && op.latitud !== undefined && op.longitud !== null && op.longitud !== undefined &&
+        Number.isFinite(lat) && Number.isFinite(lng) && Number.isFinite(radio) &&
+        Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && radio > 0
+    return completa
+        ? { latitud: lat, longitud: lng, radio_metros: Math.round(radio) }
+        : { latitud: null, longitud: null, radio_metros: null }
+}
+
 // 3. Crear o Actualizar
 export async function upsertOperacion(operacion: Partial<Operacion>) {
     requireAdmin(await getUserProfile())
     const supabase = await createClient()
+
+    // Geocerca a medias (por ejemplo, radio sin coordenadas) → se avisa en vez de guardarla vacía
+    const algunDato = [operacion.latitud, operacion.longitud, operacion.radio_metros]
+        .some((v) => v !== null && v !== undefined && String(v) !== '')
+    if (algunDato && geocercaDe(operacion).latitud === null) {
+        return {
+            success: false,
+            error: 'Geocerca incompleta: indica latitud, longitud y un radio mayor a 0, o deja los tres campos vacíos.',
+        }
+    }
 
     if (operacion.id) {
         const { error } = await supabase
@@ -85,6 +113,7 @@ export async function upsertOperacion(operacion: Partial<Operacion>) {
                 limite_horas: operacion.limite_horas ?? 8,
                 max_extras_dia: operacion.max_extras_dia ?? 2,
                 minutos_almuerzo: operacion.minutos_almuerzo ?? 0,
+                ...geocercaDe(operacion),
             })
             .eq('id', operacion.id)
 
@@ -107,6 +136,7 @@ export async function upsertOperacion(operacion: Partial<Operacion>) {
                 limite_horas: operacion.limite_horas ?? 8,
                 max_extras_dia: operacion.max_extras_dia ?? 2,
                 minutos_almuerzo: operacion.minutos_almuerzo ?? 0,
+                ...geocercaDe(operacion),
             })
 
         if (error) return { success: false, error: error.message }

@@ -1,4 +1,4 @@
-import { getUserProfile } from '@/lib/auth'
+import { getUserProfile, fueraDeAlcance } from '@/lib/auth'
 import { redirect, notFound } from 'next/navigation'
 import {
     getEmpleadoDetalle,
@@ -32,7 +32,7 @@ export default async function EmpleadoDetallePage({
     const empleado = await getEmpleadoDetalle(cedula)
     if (!empleado) notFound()
 
-    if (profile.rol === 'coordinador' && empleado.operacion !== profile.operacion_nombre) {
+    if (fueraDeAlcance(profile, empleado.operacion)) {
         redirect('/empleados')
     }
 

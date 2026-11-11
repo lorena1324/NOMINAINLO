@@ -1,18 +1,38 @@
-import { getAprobacionesPendientes, getJornadasInconsistentes } from './actions'
+import { getAprobacionesPendientes, getCierresRecientes, getJornadasInconsistentes } from './actions'
 import { AprobacionesPanel, InconsistentesPanel } from './AprobacionesClient'
+import { CierreQuincena } from './CierreQuincena'
 import { Button } from '@/components/ui/button'
 import { Clock, AlertTriangle, Download } from 'lucide-react'
-import { hoyColombiaISO, quincenaDeFecha } from '@/lib/asistencia'
+import { hoyColombiaISO, moverQuincena, quincenaDeFecha } from '@/lib/asistencia'
+import { getUserProfile, puedeEditar } from '@/lib/auth'
+import { redirect } from 'next/navigation'
 
 export default async function AprobacionesPage() {
-    const [aprobacionesRes, inconsistentesRes] = await Promise.all([
+    const profile = await getUserProfile()
+    if (!profile) redirect('/')
+    // El visualizador ve todo, pero sin botones de acción
+    const soloLectura = !puedeEditar(profile)
+
+    const [aprobacionesRes, inconsistentesRes, cierres] = await Promise.all([
         getAprobacionesPendientes(),
         getJornadasInconsistentes(),
+        getCierresRecientes(),
     ])
 
     const aprobaciones = aprobacionesRes.data ?? []
     const inconsistentes = inconsistentesRes.data ?? []
     const q = quincenaDeFecha(hoyColombiaISO())
+
+    // Quincenas ya terminadas (las tres últimas) que todavía no tienen cierre
+    const cerradas = new Set(cierres.map((c) => `${c.periodo_inicio}|${c.periodo_fin}`))
+    const opciones: { start: string; end: string; etiqueta: string }[] = []
+    let cursor = moverQuincena(q, -1)
+    for (let i = 0; i < 3; i++) {
+        if (!cerradas.has(`${cursor.start}|${cursor.end}`)) {
+            opciones.push({ start: cursor.start, end: cursor.end, etiqueta: cursor.etiqueta })
+        }
+        cursor = moverQuincena(cursor, -1)
+    }
 
     return (
         <div className="space-y-8">
@@ -20,8 +40,9 @@ export default async function AprobacionesPage() {
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800">Panel de Control</h1>
                     <p className="text-slate-500 text-sm">
-                        Aprueba horas extra y registra la salida real de las jornadas que quedaron abiertas.
-                        Cada acción guarda quién la hizo, cuándo y el motivo.
+                        {soloLectura
+                            ? 'Consulta de horas extra pendientes y jornadas que quedaron abiertas. Tu perfil es de solo consulta.'
+                            : 'Aprueba horas extra y registra la salida real de las jornadas que quedaron abiertas. Cada acción guarda quién la hizo, cuándo y el motivo.'}
                     </p>
                 </div>
                 {/* Reporte para revisar antes del cierre de la quincena en curso */}
@@ -48,7 +69,7 @@ export default async function AprobacionesPage() {
                         </h2>
                     </div>
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    <AprobacionesPanel aprobaciones={aprobaciones as any} />
+                    <AprobacionesPanel aprobaciones={aprobaciones as any} soloLectura={soloLectura} />
                 </section>
 
                 {/* Jornadas sin salida */}
@@ -65,9 +86,11 @@ export default async function AprobacionesPage() {
                         </h2>
                     </div>
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    <InconsistentesPanel jornadas={inconsistentes as any} />
+                    <InconsistentesPanel jornadas={inconsistentes as any} soloLectura={soloLectura} />
                 </section>
             </div>
+
+            <CierreQuincena cierres={cierres} opciones={opciones} esAdmin={profile.rol === 'admin'} />
         </div>
     )
 }

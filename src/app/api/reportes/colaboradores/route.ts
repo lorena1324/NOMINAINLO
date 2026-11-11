@@ -15,6 +15,9 @@ const COLUMNAS: ColumnaTabla[] = [
     { titulo: 'TURNO ASIGNADO', clave: 'turno', ancho: 26 },
     { titulo: 'FECHA DE CREACIÓN EN LA APP', clave: 'creado', ancho: 20, tipo: 'fecha' },
     { titulo: 'ESTADO', clave: 'estado', ancho: 12 },
+    // Columnas nuevas siempre al final, para no mover las anteriores
+    { titulo: 'FECHA DE INGRESO', clave: 'ingreso', ancho: 18, tipo: 'fecha' },
+    { titulo: 'AUTORIZÓ TRATAMIENTO DE DATOS', clave: 'autorizo', ancho: 22 },
 ]
 
 /**
@@ -59,6 +62,8 @@ export async function GET(request: NextRequest) {
                 turno: u.turno_id ? (turno.get(u.turno_id as string) ?? '') : '',
                 creado: u.created_at ? fechaISOaDateUTC(fechaColombiaISO(u.created_at as string)) : null,
                 estado: u.status === 'activo' ? 'ACTIVO' : 'INACTIVO',
+                ingreso: u.fecha_ingreso ? fechaISOaDateUTC(String(u.fecha_ingreso).slice(0, 10)) : null,
+                autorizo: u.autorizacion_datos_en ? 'SI' : 'NO',
             }
         })
 

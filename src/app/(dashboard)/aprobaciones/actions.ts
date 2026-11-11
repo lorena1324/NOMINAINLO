@@ -1,9 +1,78 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { getUserProfile, requireAdminOrCoordinador, getOperationFilter } from '@/lib/auth'
+import { getUserProfile, requireAdminOrCoordinador, requirePerfil, getOperationFilter } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
-import { UMBRAL_CIERRE_AUTOMATICO_HORAS, fechaColombiaISO, horaColombia24 } from '@/lib/asistencia'
+import {
+    UMBRAL_CIERRE_AUTOMATICO_HORAS,
+    fechaColombiaISO,
+    horaColombia24,
+    hoyColombiaISO,
+    type ResultadoExtras,
+} from '@/lib/asistencia'
+import { requireAdmin } from '@/lib/auth'
+import { cerrarQuincena } from '@/lib/cierreQuincena'
+
+// ─── Cierre de incidencias por quincena ─────────────────────────────
+
+export interface CierreResumen {
+    id: string
+    periodo_inicio: string
+    periodo_fin: string
+    automatico: boolean
+    ejecutado_por: string
+    aprobaciones_cerradas: number
+    alertas_cerradas: number
+    jornadas_pendientes: number
+    created_at: string
+}
+
+/** Últimos cierres ejecutados (para mostrar el historial en el Panel de Control). */
+export async function getCierresRecientes(): Promise<CierreResumen[]> {
+    const supabase = await createClient()
+    const profile = await getUserProfile()
+    requirePerfil(profile)
+    const { data, error } = await supabase
+        .from('cierres_quincena')
+        .select('id, periodo_inicio, periodo_fin, automatico, ejecutado_por, aprobaciones_cerradas, alertas_cerradas, jornadas_pendientes, created_at')
+        .order('periodo_fin', { ascending: false })
+        .limit(6)
+    if (error) return []
+    return (data ?? []) as CierreResumen[]
+}
+
+/**
+ * Cierre manual de una quincena ya terminada (solo administrador).
+ * Guarda respaldo, pasa a "No aprobada" las horas extra que seguían pendientes
+ * y limpia las alertas del período. No toca ninguna marcación.
+ */
+export async function cerrarQuincenaManual(inicioISO: string, finISO: string) {
+    const supabase = await createClient()
+    const profile = await getUserProfile()
+    requireAdmin(profile)
+
+    const formato = /^\d{4}-\d{2}-\d{2}$/
+    if (!formato.test(inicioISO) || !formato.test(finISO) || inicioISO > finISO) {
+        return { success: false as const, error: 'El período no es válido.' }
+    }
+    if (finISO >= hoyColombiaISO()) {
+        return { success: false as const, error: 'Solo se puede cerrar una quincena que ya terminó.' }
+    }
+
+    try {
+        const resultado = await cerrarQuincena(supabase, {
+            inicioISO,
+            finISO,
+            autor: profile.email,
+            automatico: false,
+        })
+        revalidarVistas()
+        return { success: true as const, resultado }
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : 'No se pudo cerrar la quincena.'
+        return { success: false as const, error: msg }
+    }
+}
 
 /** "correo · AAAA-MM-DD HH:MM" — sello de quién y cuándo, para trazabilidad. */
 function sello(email: string): string {
@@ -33,7 +102,7 @@ async function cerrarAlertaExtras(
 export async function getAprobacionesPendientes() {
     const supabase = await createClient()
     const profile = await getUserProfile()
-    requireAdminOrCoordinador(profile)
+    requirePerfil(profile)
     const filtroOp = getOperationFilter(profile)
 
     const { data, error } = await supabase
@@ -61,15 +130,28 @@ export async function getAprobacionesPendientes() {
     return { success: true, data: resultado }
 }
 
-export async function aprobarExtras(aprobacionId: string, nota?: string) {
+/**
+ * Aprueba unas horas extra dejando registrado CÓMO se reconocen:
+ * pagadas en nómina, compensadas en tiempo o reconocidas por el cliente.
+ */
+export async function aprobarExtras(
+    aprobacionId: string,
+    nota?: string,
+    resultado: ResultadoExtras = 'PAGADA_NOMINA',
+) {
     const supabase = await createClient()
     const profile = await getUserProfile()
     requireAdminOrCoordinador(profile)
+
+    if (!['PAGADA_NOMINA', 'COMPENSADA_TIEMPO', 'RECONOCIDA_CLIENTE'].includes(resultado)) {
+        return { success: false, error: 'Indica cómo se reconocen las horas extra.' }
+    }
 
     const { data, error } = await supabase
         .from('aprobaciones_extras')
         .update({
             estado: 'APROBADA',
+            resultado,
             coordinador_id: profile.userId,
             nota_coordinador: `${nota?.trim() || 'Aprobada'} — ${sello(profile.email)}`,
             updated_at: new Date().toISOString(),
@@ -97,6 +179,7 @@ export async function rechazarExtras(aprobacionId: string, nota: string) {
         .from('aprobaciones_extras')
         .update({
             estado: 'RECHAZADA',
+            resultado: 'NO_APROBADA',
             coordinador_id: profile.userId,
             nota_coordinador: `${nota.trim()} — ${sello(profile.email)}`,
             updated_at: new Date().toISOString(),
@@ -116,7 +199,7 @@ export async function rechazarExtras(aprobacionId: string, nota: string) {
 export async function getJornadasInconsistentes() {
     const supabase = await createClient()
     const profile = await getUserProfile()
-    requireAdminOrCoordinador(profile)
+    requirePerfil(profile)
     const filtroOp = getOperationFilter(profile)
 
     // Cierre automático al consultar: toda jornada abierta por más de 15 h pasa

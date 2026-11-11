@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { NovedadesForm } from './NovedadesForm'
 import { DeleteNovedadButton } from './DeleteNovedadButton'
 import Link from 'next/link'
-import { getUserProfile } from '@/lib/auth'
+import { getUserProfile, puedeEditar } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 
 export default async function NovedadesPage() {
@@ -47,7 +47,7 @@ export default async function NovedadesPage() {
         usuario?: { nombre?: string; operacion?: string } | { nombre?: string; operacion?: string }[]
     }
     let novedades = (novedadesRaw ?? []) as NovedadRow[]
-    if (profile.rol === 'coordinador') {
+    if (profile.rol !== 'admin' && profile.operacion_nombre) {
         novedades = novedades.filter((n) => {
             const usuario = Array.isArray(n.usuario) ? n.usuario[0] : n.usuario
             return usuario?.operacion === profile.operacion_nombre
@@ -70,7 +70,11 @@ export default async function NovedadesPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                 <div className="col-span-1">
-                    <NovedadesForm rol={profile.rol} />
+                    {puedeEditar(profile) ? (
+                        <NovedadesForm />
+                    ) : (
+                        <Card><CardContent className="py-8 text-sm text-slate-500 text-center">Tu perfil es de solo consulta: puedes ver el historial, pero no registrar novedades.</CardContent></Card>
+                    )}
                 </div>
 
                 <div className="col-span-1 lg:col-span-2">

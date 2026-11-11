@@ -1,7 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { toColombiaTime } from '@/lib/calculoHoras'
-import { UMBRAL_CIERRE_AUTOMATICO_HORAS } from '@/lib/asistencia'
+import { UMBRAL_CIERRE_AUTOMATICO_HORAS, hoyColombiaISO } from '@/lib/asistencia'
+import { aplicarCambiosOperacionPendientes } from '@/lib/cambiosOperacion'
+import { cerrarQuincena, quincenaACerrarAutomaticamente } from '@/lib/cierreQuincena'
+import { limpiarFotosVencidas } from '@/lib/fotos'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -195,8 +198,42 @@ export async function GET(request: NextRequest) {
             }
         }
 
+        // Cada tarea adicional va en su propio try: si una falla, las demás siguen.
+
+        // ─── 3. Cambios de operación programados que ya entran en vigencia ─
+        let cambiosOperacion = 0
+        try {
+            cambiosOperacion = await aplicarCambiosOperacionPendientes(supabase)
+        } catch (e) {
+            console.error('[CRON] cambios de operación:', e)
+        }
+
+        // ─── 4. Cierre de incidencias por quincena (días 1 y 16) ─────────
+        let cierreQuincena: Awaited<ReturnType<typeof cerrarQuincena>> | null = null
+        try {
+            const aCerrar = quincenaACerrarAutomaticamente(hoyColombiaISO(ahora))
+            if (aCerrar) {
+                cierreQuincena = await cerrarQuincena(supabase, {
+                    inicioISO: aCerrar.start,
+                    finISO: aCerrar.end,
+                    autor: 'sistema',
+                    automatico: true,
+                })
+            }
+        } catch (e) {
+            console.error('[CRON] cierre de quincena:', e)
+        }
+
+        // ─── 5. Fotos que cumplieron el período de retención ─────────────
+        let fotosEliminadas = 0
+        try {
+            fotosEliminadas = await limpiarFotosVencidas()
+        } catch (e) {
+            console.error('[CRON] limpieza de fotos:', e)
+        }
+
         console.log(
-            `[CRON ${ahora.toISOString()}] inconsistentes=${inconsistentes.length} dominical=${ayerFueDomingo ? 'sí' : 'no'}`,
+            `[CRON ${ahora.toISOString()}] inconsistentes=${inconsistentes.length} dominical=${ayerFueDomingo ? 'sí' : 'no'} cambiosOperacion=${cambiosOperacion} cierreQuincena=${cierreQuincena ? 'sí' : 'no'} fotosEliminadas=${fotosEliminadas}`,
         )
 
         return NextResponse.json({
@@ -205,6 +242,9 @@ export async function GET(request: NextRequest) {
             inconsistentes_marcadas: inconsistentes.length,
             ids_inconsistentes: inconsistentes,
             cierre_dominical: resumenDominical,
+            cambios_operacion_aplicados: cambiosOperacion,
+            cierre_quincena: cierreQuincena,
+            fotos_eliminadas: fotosEliminadas,
         })
     } catch (err) {
         const msg = err instanceof Error ? err.message : 'Error'

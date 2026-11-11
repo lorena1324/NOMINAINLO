@@ -23,7 +23,9 @@ function defaultRange(tipo: TipoPeriodo, mes: number, anio: number): { start: st
     }
 }
 
-export function AdminFilters({ rol }: { rol: string; operacionFija: string | null }) {
+export function AdminFilters({ operacionFija }: { rol: string; operacionFija: string | null }) {
+    // Con operación fija (coordinador o visualizador) no se puede elegir otra
+    const puedeElegirOperacion = !operacionFija
     const router = useRouter()
     const searchParams = useSearchParams()
 
@@ -173,7 +175,7 @@ export function AdminFilters({ rol }: { rol: string; operacionFija: string | nul
                 </div>
 
                 {/* Operaciones (solo admin) */}
-                {rol !== 'coordinador' && (
+                {puedeElegirOperacion && (
                     <div className="space-y-1.5 flex-1 min-w-50 relative" ref={dropdownRef}>
                         <Label className="text-xs font-medium text-slate-600 uppercase tracking-wide">
                             Operaciones
@@ -295,7 +297,7 @@ export function AdminFilters({ rol }: { rol: string; operacionFija: string | nul
             </div>
 
             {/* Chips de operaciones seleccionadas (solo si hay más de una) */}
-            {rol !== 'coordinador' && operacionesSeleccionadas.length > 1 && (
+            {puedeElegirOperacion && operacionesSeleccionadas.length > 1 && (
                 <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-slate-100">
                     {operacionesSeleccionadas.map((op) => (
                         <span

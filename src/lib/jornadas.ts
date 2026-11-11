@@ -10,6 +10,10 @@ import {
     UMBRAL_CIERRE_AUTOMATICO_HORAS,
     horaColombia24,
     fechaColombiaISO,
+    evaluarGeocerca,
+    ubicacionValida,
+    type Geocerca,
+    type Ubicacion,
 } from '@/lib/asistencia'
 
 // ==================================================
@@ -46,6 +50,10 @@ export interface Jornada {
     cerrada_por: 'empleado' | 'coordinador' | 'cron' | null
     hora_salida_manual: string | null
     alerta_critica: boolean
+    fuera_geocerca?: boolean
+    marcacion_offline?: boolean
+    foto_entrada?: string | null
+    foto_salida?: string | null
     created_at: string
     updated_at: string
 }
@@ -155,6 +163,33 @@ async function obtenerConfigOperacion(
     }
 }
 
+/** Datos opcionales que acompañan una marcación del quiosco. */
+export interface DatosMarcacion {
+    /** Momento real de la marcación (para las guardadas sin conexión). Por defecto: ahora. */
+    momento?: Date
+    /** Ubicación del dispositivo al marcar. */
+    ubicacion?: Partial<Ubicacion> | null
+    /** true = se guardó sin internet y se sincronizó después. */
+    offline?: boolean
+}
+
+/**
+ * Geocerca de la operación. Va en una consulta aparte para que un problema con
+ * estas columnas nunca afecte la configuración de liquidación (almuerzo, límite).
+ */
+async function obtenerGeocerca(
+    supabase: Awaited<ReturnType<typeof createClient>>,
+    nombre: string,
+): Promise<Geocerca | null> {
+    const { data, error } = await supabase
+        .from('operaciones')
+        .select('latitud, longitud, radio_metros')
+        .eq('nombre', nombre)
+        .maybeSingle()
+    if (error || !data) return null
+    return data as Geocerca
+}
+
 async function obtenerSaldoBolsa(
     supabase: Awaited<ReturnType<typeof createClient>>,
     empleadoId: string,
@@ -257,6 +292,7 @@ function fechaColombiaYYYYMMDD(fechaUTC: Date): string {
 export async function abrirJornada(
     cedula: string,
     operacion: string,
+    datos: DatosMarcacion = {},
 ): Promise<Resultado<Jornada>> {
     const supabase = await createClient()
 
@@ -268,13 +304,21 @@ export async function abrirJornada(
         .maybeSingle()
     if (activa) return { data: null, error: 'Ya existe una jornada activa para este empleado.' }
 
+    const geo = evaluarGeocerca(await obtenerGeocerca(supabase, operacion), datos.ubicacion)
+    const tieneUbicacion = ubicacionValida(datos.ubicacion)
+
     const { data, error } = await supabase
         .from('jornadas')
         .insert({
             empleado_id: cedula,
             operacion,
-            entrada: new Date().toISOString(),
+            entrada: (datos.momento ?? new Date()).toISOString(),
             estado: 'ABIERTO',
+            entrada_lat: tieneUbicacion ? datos.ubicacion!.lat : null,
+            entrada_lng: tieneUbicacion ? datos.ubicacion!.lng : null,
+            entrada_distancia_m: geo.distancia,
+            fuera_geocerca: geo.fuera,
+            marcacion_offline: !!datos.offline,
         })
         .select('*')
         .single()
@@ -290,9 +334,10 @@ export async function abrirJornada(
 export async function cerrarJornada(
     cedula: string,
     salidaTimestamp?: Date,
+    datos: DatosMarcacion = {},
 ): Promise<Resultado<Jornada>> {
     const supabase = await createClient()
-    const salida = salidaTimestamp ?? new Date()
+    const salida = salidaTimestamp ?? datos.momento ?? new Date()
 
     const { data: jornada, error: errBuscar } = await supabase
         .from('jornadas')
@@ -305,7 +350,13 @@ export async function cerrarJornada(
 
     const config = await obtenerConfigOperacion(supabase, jornada.operacion)
     const entrada = new Date(jornada.entrada)
+    if (salida.getTime() <= entrada.getTime()) {
+        return { data: null, error: 'La salida no puede ser anterior a la entrada.' }
+    }
     const snapshot = await calcularSnapshot(entrada, salida, config.minutos_almuerzo)
+
+    const geo = evaluarGeocerca(await obtenerGeocerca(supabase, jornada.operacion), datos.ubicacion)
+    const tieneUbicacion = ubicacionValida(datos.ubicacion)
 
     const jornadaActualizada = await liquidarJornada(supabase, {
         jornada,
@@ -314,6 +365,14 @@ export async function cerrarJornada(
         limiteHoras: config.limite_horas,
         cerradaPor: 'empleado',
         estadoFinal: 'CERRADO',
+        extra: {
+            salida_lat: tieneUbicacion ? datos.ubicacion!.lat : null,
+            salida_lng: tieneUbicacion ? datos.ubicacion!.lng : null,
+            salida_distancia_m: geo.distancia,
+            // Se conserva la marca si la entrada ya había quedado fuera o sin conexión
+            fuera_geocerca: !!jornada.fuera_geocerca || geo.fuera,
+            marcacion_offline: !!jornada.marcacion_offline || !!datos.offline,
+        },
     })
 
     return { data: jornadaActualizada, error: null }
@@ -447,6 +506,8 @@ interface LiquidarArgs {
     cerradaPor: 'empleado' | 'coordinador' | 'cron'
     estadoFinal: EstadoJornada
     horaSalidaManual?: Date
+    /** Columnas adicionales a guardar junto con el cierre (ubicación, banderas). */
+    extra?: Record<string, unknown>
 }
 
 async function liquidarJornada(
@@ -460,6 +521,7 @@ async function liquidarJornada(
 
     // 1. Actualizar la jornada con el snapshot
     const updatePayload: Record<string, unknown> = {
+        ...(args.extra ?? {}),
         ...args.snapshot,
         estado: args.estadoFinal,
         salida: args.salida.toISOString(),

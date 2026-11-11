@@ -26,6 +26,8 @@ import {
     type PerfilConEmail
 } from '../usuarios-actions'
 
+type RolPanel = 'admin' | 'coordinador' | 'visualizador'
+
 export function UsuariosClient({
     usuarios,
     operaciones
@@ -41,11 +43,11 @@ export function UsuariosClient({
     // Create form state
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
-    const [rol, setRol] = useState<'admin' | 'coordinador'>('coordinador')
+    const [rol, setRol] = useState<RolPanel>('coordinador')
     const [operacion, setOperacion] = useState('')
 
     // Edit form state
-    const [editRol, setEditRol] = useState<'admin' | 'coordinador'>('coordinador')
+    const [editRol, setEditRol] = useState<RolPanel>('coordinador')
     const [editOperacion, setEditOperacion] = useState('')
 
     const resetCreateForm = () => {
@@ -63,7 +65,7 @@ export function UsuariosClient({
             email,
             password,
             rol,
-            operacion_nombre: rol === 'coordinador' ? operacion : null
+            operacion_nombre: rol === 'admin' ? null : (operacion || null)
         })
 
         setIsLoading(false)
@@ -80,7 +82,7 @@ export function UsuariosClient({
 
     const openEditDialog = (user: PerfilConEmail) => {
         setEditingUser(user)
-        setEditRol(user.rol as 'admin' | 'coordinador')
+        setEditRol(user.rol as RolPanel)
         setEditOperacion(user.operacion_nombre || '')
     }
 
@@ -93,7 +95,7 @@ export function UsuariosClient({
         const result = await editarPerfil({
             id: editingUser.id,
             rol: editRol,
-            operacion_nombre: editRol === 'coordinador' ? editOperacion : null
+            operacion_nombre: editRol === 'admin' ? null : (editOperacion || null)
         })
 
         setIsLoading(false)
@@ -239,20 +241,21 @@ export function UsuariosClient({
 
                         <div className="space-y-2">
                             <Label>Rol *</Label>
-                            <Select value={rol} onValueChange={(v) => setRol(v as 'admin' | 'coordinador')}>
+                            <Select value={rol} onValueChange={(v) => setRol(v as RolPanel)}>
                                 <SelectTrigger>
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="coordinador">Coordinador</SelectItem>
+                                    <SelectItem value="visualizador">Visualizador (solo consulta)</SelectItem>
                                     <SelectItem value="admin">Administrador</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
 
-                        {rol === 'coordinador' && (
+                        {rol !== 'admin' && (
                             <div className="space-y-2">
-                                <Label>Operación Asignada *</Label>
+                                <Label>{rol === 'coordinador' ? 'Operación Asignada *' : 'Operación (vacío = consulta todas)'}</Label>
                                 <Select value={operacion} onValueChange={setOperacion}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="Seleccione operación..." />
@@ -293,20 +296,21 @@ export function UsuariosClient({
 
                             <div className="space-y-2">
                                 <Label>Rol *</Label>
-                                <Select value={editRol} onValueChange={(v) => setEditRol(v as 'admin' | 'coordinador')}>
+                                <Select value={editRol} onValueChange={(v) => setEditRol(v as RolPanel)}>
                                     <SelectTrigger>
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="coordinador">Coordinador</SelectItem>
-                                        <SelectItem value="admin">Administrador</SelectItem>
+                                        <SelectItem value="visualizador">Visualizador (solo consulta)</SelectItem>
+                                    <SelectItem value="admin">Administrador</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
 
-                            {editRol === 'coordinador' && (
+                            {editRol !== 'admin' && (
                                 <div className="space-y-2">
-                                    <Label>Operación Asignada *</Label>
+                                    <Label>{editRol === 'coordinador' ? 'Operación Asignada *' : 'Operación (vacío = consulta todas)'}</Label>
                                     <Select value={editOperacion} onValueChange={setEditOperacion}>
                                         <SelectTrigger>
                                             <SelectValue placeholder="Seleccione operación..." />

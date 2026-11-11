@@ -7,6 +7,12 @@
 #   NEXT_PUBLIC_SUPABASE_ANON_KEY
 #   SUPABASE_SERVICE_ROLE_KEY
 #   CRON_SECRET   (recomendada: protege el proceso nocturno)
+#
+# Opcionales (fotos de marcación cifradas):
+#   FOTOS_CLAVE_CIFRADO    frase secreta de 16+ caracteres. Sin ella las fotos
+#                          NO se guardan (se descartan). Si se cambia o se
+#                          pierde, las fotos ya guardadas no se pueden abrir.
+#   FOTOS_DIAS_RETENCION   días que se conserva cada foto (por defecto 90).
 
 [build]
   command = "npm run build"

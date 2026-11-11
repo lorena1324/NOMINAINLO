@@ -21,7 +21,12 @@ import {
     marcarAlertaRevisada,
     rechazarExtras,
 } from '@/app/(dashboard)/aprobaciones/actions'
-import { fechaColombiaISO, horaColombia24 } from '@/lib/asistencia'
+import {
+    ETIQUETA_RESULTADO_EXTRAS,
+    fechaColombiaISO,
+    horaColombia24,
+    type ResultadoExtras,
+} from '@/lib/asistencia'
 
 // ─── Registrar la salida real de una jornada sin salida ─────────────────────
 
@@ -107,6 +112,7 @@ export function CorregirJornada({
 export function ResolverExtras({ aprobacionId, onListo }: { aprobacionId: string; onListo?: () => void }) {
     const router = useRouter()
     const [nota, setNota] = useState('')
+    const [resultado, setResultado] = useState<ResultadoExtras>('PAGADA_NOMINA')
     const [guardando, setGuardando] = useState(false)
 
     const resolver = async (accion: 'aprobar' | 'rechazar') => {
@@ -115,7 +121,9 @@ export function ResolverExtras({ aprobacionId, onListo }: { aprobacionId: string
             return
         }
         setGuardando(true)
-        const res = accion === 'aprobar' ? await aprobarExtras(aprobacionId, nota) : await rechazarExtras(aprobacionId, nota)
+        const res = accion === 'aprobar'
+            ? await aprobarExtras(aprobacionId, nota, resultado)
+            : await rechazarExtras(aprobacionId, nota)
         setGuardando(false)
         if (!res.success) { toast.error(res.error ?? 'No se pudo guardar'); return }
         toast.success(accion === 'aprobar' ? 'Horas extra aprobadas.' : 'Horas extra rechazadas.')
@@ -125,6 +133,18 @@ export function ResolverExtras({ aprobacionId, onListo }: { aprobacionId: string
 
     return (
         <div className="space-y-2">
+            <div>
+                <label className="text-[11px] text-slate-500 block mb-1">Si se aprueban, ¿cómo se reconocen?</label>
+                <select
+                    value={resultado}
+                    onChange={(e) => setResultado(e.target.value as ResultadoExtras)}
+                    className="h-9 px-2 w-full max-w-xs border border-slate-200 rounded-md text-sm bg-white"
+                >
+                    {(['PAGADA_NOMINA', 'COMPENSADA_TIEMPO', 'RECONOCIDA_CLIENTE'] as ResultadoExtras[]).map((r) => (
+                        <option key={r} value={r}>{ETIQUETA_RESULTADO_EXTRAS[r]}</option>
+                    ))}
+                </select>
+            </div>
             <Textarea
                 placeholder="Motivo (opcional para aprobar, obligatorio para rechazar)"
                 value={nota}

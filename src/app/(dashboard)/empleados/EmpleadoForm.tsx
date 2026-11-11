@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { AlertTriangle } from 'lucide-react'
 import type { EmpleadoExistente } from './actions'
+import { hoyColombiaISO } from '@/lib/asistencia'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -41,6 +42,7 @@ export function EmpleadoForm({
     } | null>(null)
 
     // Límites razonables para la fecha de nacimiento: entre hace 100 años y hace 16 (edad mínima laboral CO)
+    const hoyISO = hoyColombiaISO()
     const hoy = new Date()
     const maxDate = new Date(hoy.getFullYear() - 16, hoy.getMonth(), hoy.getDate()).toISOString().slice(0, 10)
     const minDate = new Date(hoy.getFullYear() - 100, hoy.getMonth(), hoy.getDate()).toISOString().slice(0, 10)
@@ -205,6 +207,19 @@ export function EmpleadoForm({
                             required
                         />
                         <p className="text-xs text-slate-500">Edad mínima: 16 años.</p>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="fecha_ingreso">Fecha de Ingreso *</Label>
+                        <Input
+                            id="fecha_ingreso"
+                            name="fecha_ingreso"
+                            type="date"
+                            defaultValue={hoyISO}
+                            max={hoyISO}
+                            required
+                        />
+                        <p className="text-xs text-slate-500">Desde este día se cuenta su asistencia.</p>
                     </div>
 
                     <div className="space-y-2">

@@ -212,6 +212,100 @@ export const ETIQUETA_ESTADO_JORNADA: Record<string, string> = {
     INCONSISTENTE: 'Cierre automático (por validar)',
 }
 
+// ════════════════════════════════════════════════════════════════════
+// Geocerca
+// ════════════════════════════════════════════════════════════════════
+
+export interface Ubicacion {
+    lat: number
+    lng: number
+}
+
+export interface Geocerca {
+    latitud: number | null
+    longitud: number | null
+    radio_metros: number | null
+}
+
+/** Distancia en metros entre dos puntos (fórmula de Haversine). */
+export function distanciaMetros(a: Ubicacion, b: Ubicacion): number {
+    const R = 6371000
+    const rad = (g: number) => (g * Math.PI) / 180
+    const dLat = rad(b.lat - a.lat)
+    const dLng = rad(b.lng - a.lng)
+    const h =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2
+    return Math.round(2 * R * Math.asin(Math.min(1, Math.sqrt(h))))
+}
+
+export function ubicacionValida(u: Partial<Ubicacion> | null | undefined): u is Ubicacion {
+    return (
+        !!u &&
+        typeof u.lat === 'number' && typeof u.lng === 'number' &&
+        Number.isFinite(u.lat) && Number.isFinite(u.lng) &&
+        Math.abs(u.lat) <= 90 && Math.abs(u.lng) <= 180
+    )
+}
+
+/**
+ * Compara una marcación con la geocerca de la operación.
+ * - Operación sin geocerca configurada → nunca queda "fuera".
+ * - Con geocerca y sin ubicación (permiso negado o GPS apagado) → "fuera", para validar.
+ * - Con geocerca y ubicación → "fuera" si la distancia supera el radio.
+ */
+export function evaluarGeocerca(
+    geocerca: Geocerca | null,
+    ubicacion: Partial<Ubicacion> | null | undefined,
+): { configurada: boolean; distancia: number | null; fuera: boolean } {
+    const configurada =
+        !!geocerca &&
+        typeof geocerca.latitud === 'number' &&
+        typeof geocerca.longitud === 'number' &&
+        typeof geocerca.radio_metros === 'number' &&
+        geocerca.radio_metros > 0
+    if (!configurada) return { configurada: false, distancia: null, fuera: false }
+    if (!ubicacionValida(ubicacion)) return { configurada: true, distancia: null, fuera: true }
+    const distancia = distanciaMetros(
+        { lat: geocerca!.latitud!, lng: geocerca!.longitud! },
+        ubicacion,
+    )
+    return { configurada: true, distancia, fuera: distancia > geocerca!.radio_metros! }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Marcación sin conexión
+// ════════════════════════════════════════════════════════════════════
+
+/** Antigüedad máxima (horas) de una marcación guardada sin internet para aceptarla al sincronizar. */
+export const MAX_HORAS_MARCACION_OFFLINE = 72
+
+/** Retorna el error, o `null` si el momento de una marcación sin conexión es aceptable. */
+export function validarMomentoOffline(momento: Date, ahora: Date = new Date()): string | null {
+    if (Number.isNaN(momento.getTime())) return 'La hora de la marcación guardada no es válida.'
+    if (momento.getTime() > ahora.getTime() + 2 * 60000) {
+        return 'La marcación guardada tiene una hora futura (revisar la hora del dispositivo).'
+    }
+    const horas = (ahora.getTime() - momento.getTime()) / 3600000
+    if (horas > MAX_HORAS_MARCACION_OFFLINE) {
+        return `La marcación guardada tiene más de ${MAX_HORAS_MARCACION_OFFLINE} horas. Debe registrarla el coordinador.`
+    }
+    return null
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Horas extra: cómo se resolvió cada solicitud
+// ════════════════════════════════════════════════════════════════════
+
+export type ResultadoExtras = 'PAGADA_NOMINA' | 'COMPENSADA_TIEMPO' | 'RECONOCIDA_CLIENTE' | 'NO_APROBADA'
+
+export const ETIQUETA_RESULTADO_EXTRAS: Record<ResultadoExtras, string> = {
+    PAGADA_NOMINA: 'Pagada en nómina',
+    COMPENSADA_TIEMPO: 'Compensada en tiempo',
+    RECONOCIDA_CLIENTE: 'Reconocida por el cliente',
+    NO_APROBADA: 'No aprobada',
+}
+
 /** Qué pasó con un colaborador en un día concreto. */
 export type EstadoDia =
     | 'ASISTIO'            // jornada cerrada

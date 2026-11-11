@@ -49,6 +49,14 @@ export interface JornadaFila {
     minutos_extras_nocturna_dominical_festivo: number
     minutos_almuerzo_descontados: number
     alerta_critica: boolean
+    /** Alguna marcación quedó fuera del radio de la operación, o sin ubicación. */
+    fuera_geocerca: boolean
+    /** Alguna marcación se hizo sin internet y se sincronizó después. */
+    marcacion_offline: boolean
+    entrada_distancia_m: number | null
+    salida_distancia_m: number | null
+    foto_entrada: string | null
+    foto_salida: string | null
 }
 
 export interface ColaboradorFila {
@@ -59,6 +67,7 @@ export interface ColaboradorFila {
     status: string
     turno_id: string | null
     created_at: string | null
+    fecha_ingreso: string | null
 }
 
 export interface FilaAsistencia {
@@ -89,7 +98,7 @@ export interface MallaAsistencia {
 }
 
 const COLUMNAS_JORNADA =
-    'id, empleado_id, operacion, entrada, salida, estado, minutos_total, minutos_normales, minutos_nocturnas, minutos_domingos, minutos_festivos, minutos_domingos_festivos_nocturnos, minutos_extras_ordinarias, minutos_extras_nocturnas, minutos_extras_dominical_festivo, minutos_extras_nocturna_dominical_festivo, minutos_almuerzo_descontados, alerta_critica'
+    'id, empleado_id, operacion, entrada, salida, estado, minutos_total, minutos_normales, minutos_nocturnas, minutos_domingos, minutos_festivos, minutos_domingos_festivos_nocturnos, minutos_extras_ordinarias, minutos_extras_nocturnas, minutos_extras_dominical_festivo, minutos_extras_nocturna_dominical_festivo, minutos_almuerzo_descontados, alerta_critica, fuera_geocerca, marcacion_offline, entrada_distancia_m, salida_distancia_m, foto_entrada, foto_salida'
 
 /** Supabase devuelve máximo 1000 filas por consulta: traemos todas por páginas. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -191,6 +200,7 @@ export async function construirMallaAsistencia(
             status: String(u.status ?? ''),
             turno_id: (u.turno_id as string) ?? null,
             created_at: (u.created_at as string) ?? null,
+            fecha_ingreso: u.fecha_ingreso ? String(u.fecha_ingreso).slice(0, 10) : null,
         })
     }
 
@@ -262,10 +272,12 @@ export async function construirMallaAsistencia(
 
     for (const colaborador of colaboradoresMalla) {
         const activo = colaborador.status === 'activo'
-        // No se reportan inasistencias de días anteriores a la creación del colaborador.
+        // No se reportan inasistencias de días anteriores al ingreso del colaborador.
+        // Manda la fecha de ingreso; si no la tiene, se usa la de creación en la app.
         const creado = colaborador.created_at ? fechaColombiaISO(colaborador.created_at) : null
         const primera = primeraJornada.get(colaborador.id) ?? null
-        const desde = creado && primera ? (creado < primera ? creado : primera) : creado
+        const desde = colaborador.fecha_ingreso
+            ?? (creado && primera ? (creado < primera ? creado : primera) : creado)
 
         for (const fecha of dias) {
             const clave = `${colaborador.id}::${fecha}`
@@ -384,6 +396,26 @@ export function detectarInconsistencias(
                 tipo: 'Cierre automático',
                 detalle: 'Entrada sin salida registrada. Las horas no se pagan hasta validar.',
                 accion: 'Registrar la hora real de salida y el motivo.',
+            })
+        }
+        if (f.jornada?.fuera_geocerca) {
+            const d = [f.jornada.entrada_distancia_m, f.jornada.salida_distancia_m]
+                .filter((x): x is number => typeof x === 'number')
+            lista.push({
+                ...base(f),
+                tipo: 'Marcación fuera de geocerca',
+                detalle: d.length > 0
+                    ? `Marcó a ${Math.max(...d)} m del punto de la operación (o alguna marcación sin ubicación).`
+                    : 'Marcó sin ubicación disponible (permiso negado o GPS apagado).',
+                accion: 'Confirmar que el colaborador sí estaba en la operación.',
+            })
+        }
+        if (f.jornada?.marcacion_offline) {
+            lista.push({
+                ...base(f),
+                tipo: 'Marcación sin conexión',
+                detalle: 'Se registró sin internet y se sincronizó después con la hora del dispositivo.',
+                accion: 'Validar que la hora coincide con el turno real.',
             })
         }
         if (f.jornada?.alerta_critica) {

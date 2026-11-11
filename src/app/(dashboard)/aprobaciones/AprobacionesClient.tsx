@@ -29,7 +29,7 @@ interface Aprobacion {
     usuarios: { nombre: string; operacion: string } | null
 }
 
-export function AprobacionesPanel({ aprobaciones }: { aprobaciones: Aprobacion[] }) {
+export function AprobacionesPanel({ aprobaciones, soloLectura = false }: { aprobaciones: Aprobacion[]; soloLectura?: boolean }) {
     if (aprobaciones.length === 0) {
         return (
             <div className="text-center py-12 text-slate-500">
@@ -62,7 +62,7 @@ export function AprobacionesPanel({ aprobaciones }: { aprobaciones: Aprobacion[]
                             {ap.jornadas.minutos_total ? ` (${minutosAHoras(ap.jornadas.minutos_total)} pagables)` : ''}
                         </p>
                     )}
-                    <ResolverExtras aprobacionId={ap.id} />
+                    {!soloLectura && <ResolverExtras aprobacionId={ap.id} />}
                 </div>
             ))}
         </div>
@@ -79,7 +79,7 @@ interface Inconsistente {
     usuarios: { nombre: string } | null
 }
 
-export function InconsistentesPanel({ jornadas }: { jornadas: Inconsistente[] }) {
+export function InconsistentesPanel({ jornadas, soloLectura = false }: { jornadas: Inconsistente[]; soloLectura?: boolean }) {
     if (jornadas.length === 0) {
         return (
             <div className="text-center py-12 text-slate-500">
@@ -110,7 +110,7 @@ export function InconsistentesPanel({ jornadas }: { jornadas: Inconsistente[] })
                             No marcó salida. Cierre automático a las 15:00 h ({fechaDMA(auto.toISOString())} {horaColombia24(auto)}).
                             Estas horas <b>no se pagan</b> hasta registrar la salida real.
                         </p>
-                        <CorregirJornada jornadaId={j.id} entrada={j.entrada} />
+                        {!soloLectura && <CorregirJornada jornadaId={j.id} entrada={j.entrada} />}
                     </div>
                 )
             })}

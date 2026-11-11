@@ -51,7 +51,7 @@ const TIPOS_NOVEDAD = [
 const grupos = [...new Set(TIPOS_NOVEDAD.map((t) => t.grupo))]
 
 interface NovedadesFormProps {
-    rol?: 'admin' | 'coordinador'
+    rol?: string
 }
 
 export function NovedadesForm({}: NovedadesFormProps) {

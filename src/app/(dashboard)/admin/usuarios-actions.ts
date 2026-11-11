@@ -1,7 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getUserProfile, requireAdmin } from '@/lib/auth'
+import { getUserProfile, requireAdmin, type Rol } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 
 export type PerfilConEmail = {
@@ -60,7 +60,7 @@ export async function crearUsuarioAuth({
 }: {
     email: string
     password: string
-    rol: 'admin' | 'coordinador'
+    rol: Rol
     operacion_nombre: string | null
 }): Promise<{ success: boolean; error?: string }> {
     const profile = await getUserProfile()
@@ -104,7 +104,7 @@ export async function crearUsuarioAuth({
         .insert({
             id: newUser.user.id,
             rol,
-            operacion_nombre: rol === 'admin' ? null : operacion_nombre
+            operacion_nombre: rol === 'admin' ? null : (operacion_nombre || null)
         })
 
     if (perfilError) {
@@ -123,7 +123,7 @@ export async function editarPerfil({
     operacion_nombre
 }: {
     id: string
-    rol: 'admin' | 'coordinador'
+    rol: Rol
     operacion_nombre: string | null
 }): Promise<{ success: boolean; error?: string }> {
     const profile = await getUserProfile()
@@ -139,7 +139,7 @@ export async function editarPerfil({
         .from('perfiles')
         .update({
             rol,
-            operacion_nombre: rol === 'admin' ? null : operacion_nombre
+            operacion_nombre: rol === 'admin' ? null : (operacion_nombre || null)
         })
         .eq('id', id)
 

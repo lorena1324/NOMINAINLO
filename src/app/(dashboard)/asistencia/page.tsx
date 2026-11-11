@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getOperationFilter, getUserProfile } from '@/lib/auth'
+import { getOperationFilter, getUserProfile, puedeEditar } from '@/lib/auth'
 import { construirMallaAsistencia } from '@/lib/asistenciaDatos'
 import { hoyColombiaISO, quincenaDeFecha } from '@/lib/asistencia'
 import { Button } from '@/components/ui/button'
@@ -125,7 +125,7 @@ export default async function AsistenciaDiariaPage({
                     <CardContent className="py-8 text-center text-sm text-red-600">{error}</CardContent>
                 </Card>
             ) : (
-                <AsistenciaDiariaClient filas={filas} fecha={fecha} esHoy={fecha === hoy} />
+                <AsistenciaDiariaClient filas={filas} fecha={fecha} esHoy={fecha === hoy} puedeCorregir={puedeEditar(profile)} />
             )}
         </div>
     )

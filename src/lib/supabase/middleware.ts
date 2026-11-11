@@ -76,8 +76,8 @@ export async function updateSession(request: NextRequest) {
             return NextResponse.redirect(url)
         }
 
-        // Coordinador no puede acceder a rutas admin-only
-        if (perfil.rol === 'coordinador') {
+        // Solo el administrador entra a las rutas de configuración
+        if (perfil.rol !== 'admin') {
             const isAdminOnly = ADMIN_ONLY_ROUTES.some(route => pathname.startsWith(route))
             if (isAdminOnly) {
                 const url = request.nextUrl.clone()

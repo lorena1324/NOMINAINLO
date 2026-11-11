@@ -11,10 +11,13 @@ export function AsistenciaDiariaClient({
     filas,
     fecha,
     esHoy,
+    puedeCorregir = true,
 }: {
     filas: FilaAsistencia[]
     fecha: string
     esHoy: boolean
+    /** false para el perfil visualizador: no muestra botones de corrección. */
+    puedeCorregir?: boolean
 }) {
     const [vista, setVista] = useState<Vista>('todos')
     const [turno, setTurno] = useState('')
@@ -39,7 +42,7 @@ export function AsistenciaDiariaClient({
             if (f.retardoMin && f.retardoMin > 0) c.retardos++
             if (f.estado === 'SIN_ASISTENCIA') c.ausentes++
             if (f.estado === 'NOVEDAD') c.novedades++
-            if (f.estado === 'CIERRE_AUTOMATICO' || f.operacionDistinta || f.timbradaConNovedad) c.validar++
+            if (f.estado === 'CIERRE_AUTOMATICO' || f.operacionDistinta || f.timbradaConNovedad || !!f.jornada?.fuera_geocerca) c.validar++
         }
         return c
     }, [filas])
@@ -61,7 +64,7 @@ export function AsistenciaDiariaClient({
                 case 'retardos': return !!f.retardoMin && f.retardoMin > 0
                 case 'ausentes': return f.estado === 'SIN_ASISTENCIA'
                 case 'novedades': return f.estado === 'NOVEDAD'
-                case 'validar': return f.estado === 'CIERRE_AUTOMATICO' || f.operacionDistinta || f.timbradaConNovedad
+                case 'validar': return f.estado === 'CIERRE_AUTOMATICO' || f.operacionDistinta || f.timbradaConNovedad || !!f.jornada?.fuera_geocerca
                 default: return true
             }
         })
@@ -120,7 +123,7 @@ export function AsistenciaDiariaClient({
                             {fecha.split('-').reverse().join('/')} · {visibles.length} de {filas.length}
                         </span>
                     </div>
-                    <TablaAsistencia filas={visibles} modo="dia" />
+                    <TablaAsistencia filas={visibles} modo="dia" puedeCorregir={puedeCorregir} />
                 </CardContent>
             </Card>
         </div>

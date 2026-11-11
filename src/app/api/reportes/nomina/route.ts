@@ -31,6 +31,8 @@ function textoValidar(f: FilaAsistencia): string {
     if (f.operacionDistinta) notas.push(`Marcó en operación distinta a la asignada (${f.colaborador.operacion})`)
     if (f.timbradaConNovedad) notas.push('Marcó asistencia en un día con novedad')
     if (f.jornada?.alerta_critica) notas.push('Jornada mayor a 12 h')
+    if (f.jornada?.fuera_geocerca) notas.push('Marcación fuera de geocerca o sin ubicación')
+    if (f.jornada?.marcacion_offline) notas.push('Marcación hecha sin conexión')
     return notas.join(' · ')
 }
 

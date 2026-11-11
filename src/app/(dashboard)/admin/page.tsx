@@ -3,7 +3,7 @@ import { AdminFilters } from './AdminFilters'
 import { AdminTablesClient } from './AdminTablesClient'
 import { AdminResumen } from './AdminResumen'
 import { Suspense } from 'react'
-import { getUserProfile } from '@/lib/auth'
+import { getUserProfile, getOperationFilter } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 
 interface Grupo {
@@ -62,9 +62,11 @@ export default async function AdminPage({
         }
     }
 
+    // Coordinador y visualizador con operación asignada solo ven esa operación
+    const filtroPerfil = getOperationFilter(profile)
     const operaciones =
-        profile.rol === 'coordinador'
-            ? [profile.operacion_nombre!]
+        filtroPerfil.length > 0
+            ? filtroPerfil
             : pParams.op
                 ? pParams.op.split(',')
                 : []

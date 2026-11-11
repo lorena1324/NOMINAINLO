@@ -308,6 +308,77 @@ export function OperacionesClient({ initialData }: { initialData: Operacion[] })
                             </div>
                         </div>
 
+                        {/* Geocerca: zona donde se acepta la marcación */}
+                        <div className="space-y-2 rounded-lg border p-3 bg-slate-50/60">
+                            <div className="flex items-center justify-between gap-2">
+                                <label className="text-sm font-medium">Geocerca (opcional)</label>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs bg-white"
+                                    onClick={() => {
+                                        if (!navigator.geolocation) return toast.error('Este dispositivo no permite obtener la ubicación.')
+                                        navigator.geolocation.getCurrentPosition(
+                                            (pos) => {
+                                                setForm((f) => ({
+                                                    ...f,
+                                                    latitud: Number(pos.coords.latitude.toFixed(6)),
+                                                    longitud: Number(pos.coords.longitude.toFixed(6)),
+                                                    radio_metros: f.radio_metros || 200,
+                                                }))
+                                                toast.success('Ubicación tomada. Revisa el radio.')
+                                            },
+                                            () => toast.error('No se pudo obtener la ubicación. Revisa el permiso del navegador.'),
+                                            { enableHighAccuracy: true, timeout: 10000 },
+                                        )
+                                    }}
+                                >
+                                    Usar mi ubicación actual
+                                </Button>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                    <label className="text-[11px] text-slate-500">Latitud</label>
+                                    <Input
+                                        type="number"
+                                        step="any"
+                                        value={form.latitud ?? ''}
+                                        onChange={e => setForm({ ...form, latitud: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                                        placeholder="4.7110"
+                                        className="bg-white"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[11px] text-slate-500">Longitud</label>
+                                    <Input
+                                        type="number"
+                                        step="any"
+                                        value={form.longitud ?? ''}
+                                        onChange={e => setForm({ ...form, longitud: e.target.value === '' ? null : parseFloat(e.target.value) })}
+                                        placeholder="-74.0721"
+                                        className="bg-white"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[11px] text-slate-500">Radio (metros)</label>
+                                    <Input
+                                        type="number"
+                                        min={0}
+                                        value={form.radio_metros ?? ''}
+                                        onChange={e => setForm({ ...form, radio_metros: e.target.value === '' ? null : parseInt(e.target.value) })}
+                                        placeholder="200"
+                                        className="bg-white"
+                                    />
+                                </div>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                                Las marcaciones fuera de este radio, o sin ubicación, <b>no se bloquean</b>: quedan
+                                marcadas como &quot;Fuera de geocerca&quot; para que el coordinador las valide.
+                                Deja los tres campos vacíos para no usar geocerca.
+                            </p>
+                        </div>
+
                         <div className="pt-4 flex justify-end gap-2">
                             <Button type="button" variant="ghost" onClick={() => setOpenModal(false)} disabled={loading}>
                                 Cancelar

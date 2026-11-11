@@ -174,7 +174,7 @@ interface Props {
         turnos: { nombre: string; hora_inicio: string; hora_fin: string }[]
     } | null
     mesRango: { inicio: string; fin: string }
-    rol: 'admin' | 'coordinador'
+    rol: 'admin' | 'coordinador' | 'visualizador'
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -305,9 +305,12 @@ export function EmpleadoDetalleClient(props: Props) {
         semanaDominical,
         configOperacion,
         mesRango,
+        rol,
     } = props
 
     const router = useRouter()
+    // El visualizador consulta todo, pero no puede corregir ni aprobar
+    const soloLectura = rol === 'visualizador'
     const pathname = usePathname()
 
     const mesActual = useMemo(() => {
@@ -369,7 +372,7 @@ export function EmpleadoDetalleClient(props: Props) {
             <HeaderEmpleado empleado={empleado} configOperacion={configOperacion} />
 
             {/* ───── Banner de alertas ───── */}
-            {alertas.length > 0 && <BannerAlertas alertas={alertas} />}
+            {alertas.length > 0 && <BannerAlertas alertas={alertas} soloLectura={soloLectura} />}
 
             {/* ───── KPIs ───── */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -443,7 +446,7 @@ export function EmpleadoDetalleClient(props: Props) {
                 </TabsList>
 
                 <TabsContent value="jornadas" className="mt-4">
-                    <HistoricoQuincena dias={dias} diasRango={diasRango} correcciones={correcciones} />
+                    <HistoricoQuincena dias={dias} diasRango={diasRango} correcciones={correcciones} puedeCorregir={!soloLectura} />
                 </TabsContent>
 
                 <TabsContent value="bolsa" className="mt-4">
@@ -542,7 +545,7 @@ function HeaderEmpleado({
 // BANNER ALERTAS
 // ═══════════════════════════════════════════════════════════════════════
 
-function BannerAlertas({ alertas }: { alertas: Alerta[] }) {
+function BannerAlertas({ alertas, soloLectura }: { alertas: Alerta[]; soloLectura: boolean }) {
     const grupos = useMemo(() => {
         const g = new Map<TipoAlerta, Alerta[]>()
         for (const a of alertas) {
@@ -573,7 +576,7 @@ function BannerAlertas({ alertas }: { alertas: Alerta[] }) {
                             </p>
                             {/* Cada alerta se resuelve aquí mismo, con motivo obligatorio */}
                             {items.map((a) => (
-                                <AlertaAccionable key={a.id} alerta={a} />
+                                <AlertaAccionable key={a.id} alerta={a} soloLectura={soloLectura} />
                             ))}
                         </div>
                     </div>
@@ -583,7 +586,7 @@ function BannerAlertas({ alertas }: { alertas: Alerta[] }) {
     )
 }
 
-function AlertaAccionable({ alerta }: { alerta: Alerta }) {
+function AlertaAccionable({ alerta, soloLectura }: { alerta: Alerta; soloLectura: boolean }) {
     const [abierta, setAbierta] = useState(false)
 
     const fechaJornada = alerta.jornada?.entrada ? fechaCortaColombia(alerta.jornada.entrada) : null
@@ -603,7 +606,7 @@ function AlertaAccionable({ alerta }: { alerta: Alerta }) {
                     {fechaJornada && <b>Jornada del {fechaJornada}. </b>}
                     {alerta.mensaje ?? 'Revisar con el coordinador.'}
                 </p>
-                {!abierta && (
+                {!abierta && !soloLectura && (
                     <Button size="sm" variant="outline" className="h-7 text-xs bg-white shrink-0" onClick={() => setAbierta(true)}>
                         {textoBoton}
                     </Button>
@@ -860,10 +863,12 @@ function HistoricoQuincena({
     dias,
     diasRango,
     correcciones,
+    puedeCorregir,
 }: {
     dias: FilaAsistencia[]
     diasRango: { inicio: string; fin: string }
     correcciones: Correccion[]
+    puedeCorregir: boolean
 }) {
     // Por defecto: la quincena en curso si se está viendo el mes actual; si no, la primera.
     const hoy = hoyColombiaISO()
@@ -938,7 +943,7 @@ function HistoricoQuincena({
                     </div>
                 </CardHeader>
                 <CardContent className="p-0">
-                    <TablaAsistencia filas={visibles} modo="colaborador" />
+                    <TablaAsistencia filas={visibles} modo="colaborador" puedeCorregir={puedeCorregir} />
                 </CardContent>
             </Card>
 
