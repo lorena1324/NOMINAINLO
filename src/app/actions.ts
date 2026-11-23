@@ -157,9 +157,9 @@ export async function registrarAsistenciaAPI(input: RegistrarAsistenciaInput): P
             return { success: false, error: validacion.error ?? 'Cédula no válida.', definitivo: true }
         }
         const usuario = validacion.data
-        // La operación sale de la ficha del colaborador (operación por defecto).
-        // Solo si no tiene ninguna asignada se acepta la que eligió en pantalla.
-        const operacion = usuario.operacion || input.operacion
+        // La operación es SIEMPRE la de la ficha del colaborador (la fija el administrador).
+        // El colaborador no la elige al marcar.
+        const operacion = usuario.operacion
         if (!operacion) {
             return {
                 success: false,

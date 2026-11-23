@@ -7,11 +7,9 @@ import {
   registrarAsistenciaAPI,
   registrarAutorizacionDatos,
 } from './actions'
-import { getOperacionesActivas } from './(dashboard)/admin/operaciones-actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { Camera, AlertTriangle, WifiOff, CloudUpload } from 'lucide-react'
 import {
@@ -49,7 +47,7 @@ export default function KioskoPage() {
   const [nombre, setNombre] = useState('')
   const [tipo, setTipo] = useState<TipoRegistro>('ENTRADA')
   const [operacion, setOperacion] = useState('')
-  // true = el colaborador tiene operación por defecto y marca siempre en ella
+  // true = el colaborador tiene operación asignada (fija); sin ella no puede marcar
   const [operacionAsignada, setOperacionAsignada] = useState(false)
   const [estadoTurno, setEstadoTurno] = useState<EstadoTurno>('sin_turno')
   const [infoTurno, setInfoTurno] = useState<string | null>(null)
@@ -69,14 +67,6 @@ export default function KioskoPage() {
   const [fotoFile, setFotoFile] = useState<File | null>(null)
   const [fotoPreview, setFotoPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const [opcionesOp, setOpcionesOp] = useState<{ id: string, nombre: string }[]>([])
-
-  useEffect(() => {
-    getOperacionesActivas()
-      .then(res => { if (res.success && res.data) setOpcionesOp(res.data) })
-      .catch(() => { /* sin conexión: se cargan al volver */ })
-  }, [])
 
   // ─── Sincronización de marcaciones guardadas sin conexión ───────────
   const sincronizar = useCallback(async (avisar = false) => {
@@ -266,7 +256,7 @@ export default function KioskoPage() {
     e.preventDefault()
     if (!cedula) { toast.error('Ingresa tu cédula.'); return }
     if (!sinConexion && !nombre) { toast.error('Debe validar una cédula correcta primero.'); return }
-    if (!sinConexion && !operacion) { toast.error('Debe seleccionar la operación.'); return }
+    if (!sinConexion && !operacion) { toast.error('No tienes una operación asignada. Pide a tu coordinador que la asigne.'); return }
     if (!fotoFile) { toast.error('Es obligatorio tomar una fotografía.'); return }
 
     setIsLoading(true)
@@ -456,26 +446,11 @@ export default function KioskoPage() {
                     </p>
                   </>
                 ) : (
-                  <>
-                    <Select value={operacion} onValueChange={setOperacion} disabled={!nombre}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={nombre ? 'Seleccione...' : 'Primero ingrese su cédula'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {opcionesOp.map(op => (
-                          <SelectItem key={op.id} value={op.nombre}>{op.nombre}</SelectItem>
-                        ))}
-                        {opcionesOp.length === 0 && (
-                          <SelectItem value="cargando" disabled>Cargando operaciones...</SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    {nombre && (
-                      <p className="text-xs text-amber-700">
-                        No tienes operación asignada. Elige dónde trabajas hoy y avisa a tu coordinador.
-                      </p>
-                    )}
-                  </>
+                  <p id="operacion" className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
+                    {nombre
+                      ? 'No tienes una operación asignada, por eso no puedes marcar. Pide a tu coordinador que la asigne.'
+                      : 'Se muestra al ingresar tu cédula.'}
+                  </p>
                 )}
               </div>
             )}
@@ -524,7 +499,7 @@ export default function KioskoPage() {
             <Button
               type="submit"
               className="w-full mt-6 py-6 font-semibold text-lg shadow-sm"
-              disabled={isLoading || (!sinConexion && !nombre) || !cedula}
+              disabled={isLoading || (!sinConexion && (!nombre || !operacion)) || !cedula}
             >
               {isLoading ? 'Guardando...' : sinConexion ? 'Guardar marcación' : 'Confirmar Registro'}
             </Button>

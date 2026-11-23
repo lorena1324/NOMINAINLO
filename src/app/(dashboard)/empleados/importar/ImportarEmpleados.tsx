@@ -147,7 +147,7 @@ export function ImportarEmpleados({ operaciones }: { operaciones: string[] }) {
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="operacion">Operación para el personal del archivo</Label>
+                            <Label htmlFor="operacion">Operación donde marcará este personal</Label>
                             <select
                                 id="operacion"
                                 className="w-full h-9 rounded-md border px-3 text-sm bg-background"
@@ -163,8 +163,9 @@ export function ImportarEmpleados({ operaciones }: { operaciones: string[] }) {
                                 ))}
                             </select>
                             <p className="text-xs text-muted-foreground">
-                                Se usa en las filas que no traen columna OPERACION. En la revisión puedes cambiarla
-                                fila por fila.
+                                Queda fija en la ficha de cada colaborador: al marcar en el quiosco se muestra
+                                sola y ellos no la eligen. Se usa en las filas sin columna OPERACION; en la
+                                revisión puedes cambiarla fila por fila.
                             </p>
                         </div>
                     </div>
