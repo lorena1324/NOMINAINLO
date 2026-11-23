@@ -3,7 +3,8 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { signout } from '@/app/login/actions'
-import { getUserProfile } from '@/lib/auth'
+import { getOperationFilter, getUserProfile } from '@/lib/auth'
+import { createClient } from '@/lib/supabase/server'
 import {
     Users,
     Settings,
@@ -13,8 +14,25 @@ import {
     Briefcase,
     UserCog,
     ShieldCheck,
-    CalendarCheck
+    CalendarCheck,
+    FileUp
 } from 'lucide-react'
+
+/** Documentos pendientes de revisar (de su operación, para el coordinador). */
+async function contarDocumentosPendientes(filtro: string[]): Promise<number> {
+    try {
+        const supabase = await createClient()
+        let q = supabase
+            .from('documentos')
+            .select('id, usuarios!inner(operacion)', { count: 'exact', head: true })
+            .eq('estado', 'PENDIENTE')
+        if (filtro.length > 0) q = q.in('usuarios.operacion', filtro)
+        const { count } = await q
+        return count ?? 0
+    } catch {
+        return 0
+    }
+}
 
 export default async function DashboardLayout({
     children,
@@ -29,6 +47,7 @@ export default async function DashboardLayout({
     }
 
     const isAdmin = profile.rol === 'admin'
+    const documentosPendientes = await contarDocumentosPendientes(getOperationFilter(profile))
 
     return (
         <div className="flex min-h-screen bg-slate-50/40">
@@ -59,6 +78,17 @@ export default async function DashboardLayout({
                         <Button variant="ghost" className="w-full justify-start gap-2">
                             <ShieldCheck className="h-4 w-4" />
                             Panel de Control
+                        </Button>
+                    </Link>
+                    <Link href="/documentos">
+                        <Button variant="ghost" className="w-full justify-start gap-2">
+                            <FileUp className="h-4 w-4" />
+                            Documentos
+                            {documentosPendientes > 0 && (
+                                <span className="ml-auto rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                                    {documentosPendientes}
+                                </span>
+                            )}
                         </Button>
                     </Link>
                     {isAdmin && (

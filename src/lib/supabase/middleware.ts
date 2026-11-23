@@ -11,6 +11,7 @@ function isDashboardRoute(pathname: string): boolean {
         || pathname.startsWith('/admin')
         || pathname.startsWith('/asistencia')
         || pathname.startsWith('/aprobaciones')
+        || pathname.startsWith('/documentos')
 }
 
 export async function updateSession(request: NextRequest) {
@@ -46,9 +47,11 @@ export async function updateSession(request: NextRequest) {
     const pathname = request.nextUrl.pathname
     const isAuthRoute = pathname.startsWith('/login')
     const isCronRoute = pathname.startsWith('/api/cron')
+    // Portal de empleados: tiene su propio ingreso con cédula (no usa cuenta de Supabase)
+    const isPortalRoute = pathname === '/portal' || pathname.startsWith('/portal/')
 
-    // No autenticado: redirigir a login (excepto login y cron)
-    if (!user && !isAuthRoute && !isCronRoute) {
+    // No autenticado: redirigir a login (excepto login, cron y portal)
+    if (!user && !isAuthRoute && !isCronRoute && !isPortalRoute) {
         const url = request.nextUrl.clone()
         url.pathname = '/login'
         return NextResponse.redirect(url)

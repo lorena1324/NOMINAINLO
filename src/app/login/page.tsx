@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { login, signup } from './actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -58,6 +59,9 @@ export default async function LoginPage({
                                 Registrarse (Dev Only)
                             </Button>
                         )}
+                        <Link href="/portal/login" className="pt-2 text-sm text-muted-foreground">
+                            ¿Eres empleado? <span className="text-blue-600 hover:underline">Envía tus documentos aquí</span>
+                        </Link>
                     </CardFooter>
                 </form>
             </Card>
