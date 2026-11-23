@@ -15,7 +15,8 @@ import {
     UserCog,
     ShieldCheck,
     CalendarCheck,
-    FileUp
+    FileUp,
+    Sparkles
 } from 'lucide-react'
 
 /** Documentos pendientes de revisar (de su operación, para el coordinador). */
@@ -60,6 +61,12 @@ export default async function DashboardLayout({
                         <Button variant="ghost" className="w-full justify-start gap-2">
                             <Settings className="h-4 w-4" />
                             Administración
+                        </Button>
+                    </Link>
+                    <Link href="/toluia">
+                        <Button variant="ghost" className="w-full justify-start gap-2 text-violet-700 hover:text-violet-800 hover:bg-violet-50">
+                            <Sparkles className="h-4 w-4" />
+                            TOLUIA
                         </Button>
                     </Link>
                     <Link href="/asistencia">

@@ -124,3 +124,14 @@
     @apply bg-background text-foreground;
   }
 }
+/* Respuestas de TOLUIA (Markdown) */
+.toluia-respuesta p { margin: 0.35rem 0; }
+.toluia-respuesta ul, .toluia-respuesta ol { margin: 0.35rem 0; padding-left: 1.25rem; }
+.toluia-respuesta ul { list-style: disc; }
+.toluia-respuesta ol { list-style: decimal; }
+.toluia-respuesta li { margin: 0.15rem 0; }
+.toluia-respuesta strong { font-weight: 600; }
+.toluia-respuesta h1, .toluia-respuesta h2, .toluia-respuesta h3 { font-weight: 600; margin: 0.6rem 0 0.3rem; }
+.toluia-respuesta table { border-collapse: collapse; margin: 0.5rem 0; font-size: 0.8rem; display: block; overflow-x: auto; }
+.toluia-respuesta th, .toluia-respuesta td { border: 1px solid #e2e8f0; padding: 0.25rem 0.5rem; text-align: left; white-space: nowrap; }
+.toluia-respuesta th { background: #f5f3ff; }
