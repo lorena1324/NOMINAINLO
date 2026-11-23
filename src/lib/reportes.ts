@@ -86,7 +86,9 @@ function sumarJornada(acum: DetalleMinutos, j: JornadaSnapshot): DetalleMinutos 
 function calcularValores(detalle: DetalleMinutos, tarifas: Record<string, number>) {
     const valores = {
         normal:                          calcularValorPorMinutos(detalle.normales, tarifas.normal),
-        nocturnas:                       calcularValorPorMinutos(detalle.nocturnas, tarifas.nocturno),
+        // La tarifa `nocturno` es SOLO el recargo (35 %, concepto R.N). Las horas nocturnas
+        // ordinarias se valoran como hora ordinaria + recargo.
+        nocturnas:                       calcularValorPorMinutos(detalle.nocturnas, (tarifas.normal ?? 0) + (tarifas.nocturno ?? 0)),
         extrasOrdinarias:                calcularValorPorMinutos(detalle.extrasOrdinarias, tarifas.extra),
         extrasNocturnas:                 calcularValorPorMinutos(detalle.extrasNocturnas, tarifas.extraNocturno),
         domingos:                        calcularValorPorMinutos(detalle.domingos, tarifas.domingo),

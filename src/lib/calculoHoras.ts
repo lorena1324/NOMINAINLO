@@ -167,15 +167,17 @@ export async function obtenerTarifas(): Promise<Record<string, number>> {
     } catch (error) {
         console.error('Error al obtener tarifas, usando fallback:', error)
         return {
-            normal: 7959,
-            nocturno: 10745,
-            extra: 9948,
-            extraNocturno: 13928,
-            domingo: 14326,
-            festivo: 14326,
-            domingoFestivoNocturno: 17111,
-            extraDominicalFestivo: 17111,
-            extraNocturnaDominicalFestivo: 21091,
+            // 2026 desde el 15 de julio: SMMLV 1.750.905 / 210 h (semana de 42 h),
+            // recargo dominical/festivo 90 % (Ley 2466 de 2025). `nocturno` = solo el recargo (35 %).
+            normal: 8337.642857,
+            nocturno: 2918,
+            extra: 10422,
+            extraNocturno: 14591,
+            domingo: 15842,
+            festivo: 15842,
+            domingoFestivoNocturno: 18760,
+            extraDominicalFestivo: 17926,
+            extraNocturnaDominicalFestivo: 22095,
         }
     }
 }

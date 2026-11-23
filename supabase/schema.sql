@@ -255,14 +255,15 @@ create policy perfiles_propio on public.perfiles
 -- defecto). El código de nómina queda vacío: complétalo desde el editor
 -- de tablas con los códigos de tu sistema de nómina.
 -- ════════════════════════════════════════════════════════════════════
-insert into public.tarifas (tipo_hora, precio_por_hora) values
-    ('normal',                        7959),
-    ('nocturno',                      10745),
-    ('extra',                         9948),
-    ('extraNocturno',                 13928),
-    ('domingo',                       14326),
-    ('festivo',                       14326),
-    ('domingoFestivoNocturno',        17111),
-    ('extraDominicalFestivo',         17111),
-    ('extraNocturnaDominicalFestivo', 21091)
+-- Valores vigentes: ver supabase/migracion_004_tarifas_2026.sql
+insert into public.tarifas (tipo_hora, precio_por_hora, codigo_nomina) values
+    ('normal',                        8337.642857, null),
+    ('nocturno',                      2918,  '11501'),
+    ('extra',                         10422, '11001'),
+    ('extraNocturno',                 14591, '11002'),
+    ('domingo',                       15842, '11345'),
+    ('festivo',                       15842, '11345'),
+    ('domingoFestivoNocturno',        18760, '11344'),
+    ('extraDominicalFestivo',         17926, '11330'),
+    ('extraNocturnaDominicalFestivo', 22095, '11331')
 on conflict (tipo_hora) do nothing;

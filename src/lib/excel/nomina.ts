@@ -75,7 +75,8 @@ const TIPO_HORA_A_COL: Record<string, (typeof COLS_ESPECIALES)[number]['key']> =
     domingo: 'recargoFestivo',
 }
 
-const HORAS_LEGALES_MES = 220
+// Horas del mes para el valor hora: 210 con la semana de 42 h (vigente desde el 15/07/2026).
+const HORAS_LEGALES_MES = 210
 
 // ════════════════════════════════════════════════════════════════════
 // Estilos
@@ -387,13 +388,15 @@ export async function generarExcelNomina(
     ws.addRow([])
 
     // Fila PORCENTAJE
-    const tarifaNormal = tarifaMap.get('normal')?.precio_por_hora ?? 7959
+    const tarifaNormal = tarifaMap.get('normal')?.precio_por_hora ?? 8337.642857
     const rowPorcentaje = ws.addRow([])
     rowPorcentaje.getCell(4).value = 'PORCENTAJE'
     rowPorcentaje.getCell(4).font = FONT_BOLD
     codigosOrden.forEach((tipo, i) => {
         const tarifa = tarifaMap.get(tipo)
-        const pct = tarifa ? Math.round(((tarifa.precio_por_hora / tarifaNormal) - 1) * 100) : 0
+        // Porcentaje sobre la hora ordinaria, como en la tabla de nómina:
+        // extras 125/175/215/265 %, recargo nocturno 35 %, festivo 190 %, festivo nocturno 225 %.
+        const pct = tarifa ? Math.round((tarifa.precio_por_hora / tarifaNormal) * 100) : 0
         const cell = rowPorcentaje.getCell(9 + i)
         cell.value = `${pct}%`
         cell.font = FONT_BOLD
