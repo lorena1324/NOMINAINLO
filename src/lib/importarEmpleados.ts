@@ -6,7 +6,8 @@ import { hoyColombiaISO, normalizarNombre, validarFormatoCedula } from '@/lib/as
  *
  * Columnas reconocidas por su título (sin importar mayúsculas, tildes ni orden):
  *   CEDULA*, NOMBRE*, CARGO*, INGRESO / FECHA INGRESO*, SALARIO, FECHA NACIMIENTO,
- *   OPERACION / CECO (opcional: si no viene, se usa la operación elegida en pantalla).
+ *   OPERACION / CECO (opcional). Sin ella el colaborador queda sin operación y toma la
+ *   de la tablet (cuenta de la operación) donde marque por primera vez.
  * (*) obligatorias.
  */
 
@@ -176,7 +177,7 @@ export type EstadoFila =
 
 export interface FilaRevisada extends FilaExcelEmpleado {
     estado: EstadoFila
-    /** Operación que se le asignará (nuevos) o que ya tiene (existentes). */
+    /** Operación que se le asignará (nuevos; null = la toma al marcar) o que ya tiene (existentes). */
     operacionFinal: string | null
     motivo?: string
     /** Para existentes: qué cambiaría si se elige actualizar. */
@@ -188,7 +189,6 @@ export function revisarFilas(
     filas: FilaExcelEmpleado[],
     existentes: EmpleadoBD[],
     operacionesValidas: string[],
-    operacionPorDefecto: string | null,
 ): FilaRevisada[] {
     const porCedula = new Map(existentes.map((e) => [e.id, e]))
     const porNombre = new Map<string, EmpleadoBD[]>()
@@ -235,13 +235,12 @@ export function revisarFilas(
         if (!f.fechaIngreso) return err('Falta la fecha de ingreso o no es una fecha válida.')
         if (f.fechaIngreso > hoy) return err('La fecha de ingreso es futura.')
 
-        let operacionFinal = operacionPorDefecto
+        let operacionFinal: string | null = null
         if (f.operacion) {
             const op = opNormal.get(normalizarNombre(f.operacion))
             if (!op) return err(`La operación "${f.operacion}" no existe en el sistema.`)
             operacionFinal = op
         }
-        if (!operacionFinal) return err('Sin operación: elige la operación para el archivo.')
 
         const mismos = (porNombre.get(normalizarNombre(f.nombre)) ?? []).filter((e) => e.id !== f.cedula)
         if (mismos.length > 0) {

@@ -47,7 +47,7 @@ export default function KioskoPage() {
   const [nombre, setNombre] = useState('')
   const [tipo, setTipo] = useState<TipoRegistro>('ENTRADA')
   const [operacion, setOperacion] = useState('')
-  // true = el colaborador tiene operación asignada (fija); sin ella no puede marcar
+  // true = hay operación para marcar (la de la cuenta de la tablet); no se puede cambiar
   const [operacionAsignada, setOperacionAsignada] = useState(false)
   const [estadoTurno, setEstadoTurno] = useState<EstadoTurno>('sin_turno')
   const [infoTurno, setInfoTurno] = useState<string | null>(null)
@@ -145,7 +145,7 @@ export default function KioskoPage() {
         }
 
         setNombre(res.data.nombre)
-        // La operación viene de la ficha del colaborador y no se puede cambiar aquí.
+        // La operación viene de la cuenta de la tablet y no se puede cambiar aquí.
         setOperacion(res.data.operacion ?? '')
         setOperacionAsignada(!!res.data.operacion)
         // Solo se pide autorización si el sistema guarda fotos y aún no la ha dado
@@ -256,7 +256,7 @@ export default function KioskoPage() {
     e.preventDefault()
     if (!cedula) { toast.error('Ingresa tu cédula.'); return }
     if (!sinConexion && !nombre) { toast.error('Debe validar una cédula correcta primero.'); return }
-    if (!sinConexion && !operacion) { toast.error('No tienes una operación asignada. Pide a tu coordinador que la asigne.'); return }
+    if (!sinConexion && !operacion) { toast.error('Esta tablet no tiene operación: inicia sesión con la cuenta de la operación.'); return }
     if (!fotoFile) { toast.error('Es obligatorio tomar una fotografía.'); return }
 
     setIsLoading(true)
@@ -442,13 +442,13 @@ export default function KioskoPage() {
                   <>
                     <Input id="operacion" value={operacion} readOnly disabled className="bg-slate-50 font-medium" />
                     <p className="text-xs text-slate-500">
-                      Es tu operación asignada. Si no es correcta, avisa a tu coordinador.
+                      Operación de esta tablet. No se puede cambiar.
                     </p>
                   </>
                 ) : (
                   <p id="operacion" className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
                     {nombre
-                      ? 'No tienes una operación asignada, por eso no puedes marcar. Pide a tu coordinador que la asigne.'
+                      ? 'Esta tablet no tiene operación: inicia sesión con la cuenta de la operación.'
                       : 'Se muestra al ingresar tu cédula.'}
                   </p>
                 )}

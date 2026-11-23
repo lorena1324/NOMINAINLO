@@ -19,6 +19,8 @@ const ETIQUETA: Record<EstadoFila, { texto: string; clase: string }> = {
     error: { texto: 'Con error', clase: 'bg-red-100 text-red-800' },
 }
 
+const SIN_OP = 'la toman al marcar'
+
 function dma(iso: string | null) {
     return iso ? iso.split('-').reverse().join('/') : '—'
 }
@@ -27,11 +29,9 @@ function pesos(n: number | null) {
     return n === null ? '—' : n.toLocaleString('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
 }
 
-export function ImportarEmpleados({ operaciones }: { operaciones: string[] }) {
+export function ImportarEmpleados() {
     const router = useRouter()
     const [archivo, setArchivo] = useState<File | null>(null)
-    const [operacion, setOperacion] = useState('')
-    const [porFila, setPorFila] = useState<Record<string, string>>({})
     const [incluirMismoNombre, setIncluirMismoNombre] = useState(false)
     const [actualizar, setActualizar] = useState(false)
     const [reactivar, setReactivar] = useState(false)
@@ -40,13 +40,11 @@ export function ImportarEmpleados({ operaciones }: { operaciones: string[] }) {
     const [filtro, setFiltro] = useState<EstadoFila | 'todos'>('todos')
     const [resultado, setResultado] = useState<ResultadoImportacion['importado'] | null>(null)
 
-    const enviar = async (accion: 'revisar' | 'importar', cambiosFila = porFila) => {
+    const enviar = async (accion: 'revisar' | 'importar') => {
         if (!archivo) return null
         const fd = new FormData()
         fd.append('archivo', archivo)
         fd.append('accion', accion)
-        fd.append('operacion', operacion)
-        fd.append('operaciones_por_fila', JSON.stringify(cambiosFila))
         if (incluirMismoNombre) fd.append('incluir_mismo_nombre', '1')
         if (actualizar) fd.append('actualizar_existentes', '1')
         if (reactivar) fd.append('reactivar_inactivos', '1')
@@ -67,16 +65,10 @@ export function ImportarEmpleados({ operaciones }: { operaciones: string[] }) {
         }
     }
 
-    const revisar = async (cambiosFila = porFila) => {
+    const revisar = async () => {
         setResultado(null)
-        const r = await enviar('revisar', cambiosFila)
+        const r = await enviar('revisar')
         if (r) setRevision(r)
-    }
-
-    const cambiarOperacionFila = (cedula: string, op: string) => {
-        const nuevo = { ...porFila, [cedula]: op }
-        setPorFila(nuevo)
-        void revisar(nuevo)
     }
 
     const conteo = useMemo(() => {
@@ -98,7 +90,8 @@ export function ImportarEmpleados({ operaciones }: { operaciones: string[] }) {
         const m = new Map<string, number>()
         for (const f of revision?.filas ?? []) {
             if (f.estado === 'nuevo' || (incluirMismoNombre && f.estado === 'mismo_nombre')) {
-                m.set(f.operacionFinal ?? '—', (m.get(f.operacionFinal ?? '—') ?? 0) + 1)
+                const op = f.operacionFinal ?? SIN_OP
+                m.set(op, (m.get(op) ?? 0) + 1)
             }
         }
         return [...m.entries()].sort((a, b) => b[1] - a[1])
@@ -131,43 +124,23 @@ export function ImportarEmpleados({ operaciones }: { operaciones: string[] }) {
                         <b>CEDULA</b>, <b>NOMBRE</b>, <b>CARGO</b>, <b>INGRESO</b> (fecha de ingreso) y, si se tienen,{' '}
                         <b>SALARIO</b>, <b>FECHA NACIMIENTO</b> y <b>OPERACION</b>. Las cédulas van sin puntos.
                     </p>
-                    <div className="grid gap-4 md:grid-cols-2">
-                        <div className="space-y-2">
-                            <Label htmlFor="archivo">Archivo de Excel (.xlsx)</Label>
-                            <Input
-                                id="archivo"
-                                type="file"
-                                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                onChange={(e) => {
-                                    setArchivo(e.target.files?.[0] ?? null)
-                                    setRevision(null)
-                                    setResultado(null)
-                                    setPorFila({})
-                                }}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="operacion">Operación donde marcará este personal</Label>
-                            <select
-                                id="operacion"
-                                className="w-full h-9 rounded-md border px-3 text-sm bg-background"
-                                value={operacion}
-                                onChange={(e) => {
-                                    setOperacion(e.target.value)
-                                    setRevision(null)
-                                }}
-                            >
-                                <option value="">— Elegir operación —</option>
-                                {operaciones.map((o) => (
-                                    <option key={o} value={o}>{o}</option>
-                                ))}
-                            </select>
-                            <p className="text-xs text-muted-foreground">
-                                Queda fija en la ficha de cada colaborador: al marcar en el quiosco se muestra
-                                sola y ellos no la eligen. Se usa en las filas sin columna OPERACION; en la
-                                revisión puedes cambiarla fila por fila.
-                            </p>
-                        </div>
+                    <p className="text-sm rounded-md border border-sky-200 bg-sky-50 p-3 text-sky-900">
+                        No hay que elegir operación: cada colaborador queda con la operación de la tablet
+                        (cuenta de la operación) donde marque por primera vez, y no se puede cambiar desde el
+                        quiosco. Si el archivo trae columna OPERACION, se usa esa.
+                    </p>
+                    <div className="space-y-2 max-w-md">
+                        <Label htmlFor="archivo">Archivo de Excel (.xlsx)</Label>
+                        <Input
+                            id="archivo"
+                            type="file"
+                            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            onChange={(e) => {
+                                setArchivo(e.target.files?.[0] ?? null)
+                                setRevision(null)
+                                setResultado(null)
+                            }}
+                        />
                     </div>
                     <Button onClick={() => revisar()} disabled={!archivo || cargando}>
                         <Upload className="h-4 w-4 mr-2" />
@@ -226,7 +199,7 @@ export function ImportarEmpleados({ operaciones }: { operaciones: string[] }) {
 
                         {porOperacion.length > 0 && (
                             <p className="text-sm text-muted-foreground">
-                                Quedarían en:{' '}
+                                Operación:{' '}
                                 {porOperacion.map(([op, n]) => `${op} (${n})`).join(' · ')}
                             </p>
                         )}
@@ -280,7 +253,6 @@ export function ImportarEmpleados({ operaciones }: { operaciones: string[] }) {
                                 <tbody>
                                     {filasVisibles.map((f: FilaRevisada) => {
                                         const seCrea = f.estado === 'nuevo' || f.estado === 'mismo_nombre'
-                                        const puedeElegirOp = seCrea || (f.estado === 'error' && f.motivo?.includes('operación'))
                                         return (
                                             <tr key={`${f.fila}-${f.cedula}`} className="border-t align-top">
                                                 <td className="p-2 text-muted-foreground">{f.fila}</td>
@@ -295,19 +267,9 @@ export function ImportarEmpleados({ operaciones }: { operaciones: string[] }) {
                                                 <td className="p-2 whitespace-nowrap">{dma(f.fechaIngreso)}</td>
                                                 <td className="p-2 whitespace-nowrap">{pesos(f.salario)}</td>
                                                 <td className="p-2">
-                                                    {puedeElegirOp ? (
-                                                        <select
-                                                            className="h-8 rounded border px-1 text-xs bg-background max-w-[180px]"
-                                                            value={porFila[f.cedula] ?? f.operacionFinal ?? ''}
-                                                            disabled={cargando}
-                                                            onChange={(e) => cambiarOperacionFila(f.cedula, e.target.value)}
-                                                        >
-                                                            <option value="">— Elegir —</option>
-                                                            {operaciones.map((o) => <option key={o} value={o}>{o}</option>)}
-                                                        </select>
-                                                    ) : (
-                                                        <span className="text-xs">{f.operacionFinal ?? '—'}</span>
-                                                    )}
+                                                    <span className="text-xs">
+                                                        {f.operacionFinal ?? (seCrea ? 'Al marcar' : '—')}
+                                                    </span>
                                                 </td>
                                                 <td className="p-2 text-xs text-muted-foreground">
                                                     {f.motivo}

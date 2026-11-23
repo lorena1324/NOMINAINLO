@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
 import { getUserProfile } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { ImportarEmpleados } from './ImportarEmpleados'
@@ -9,10 +8,6 @@ export default async function ImportarEmpleadosPage() {
     const profile = await getUserProfile()
     if (!profile) redirect('/')
     if (profile.rol !== 'admin') redirect('/empleados')
-
-    const supabase = await createClient()
-    const { data } = await supabase.from('operaciones').select('nombre').order('nombre', { ascending: true })
-    const operaciones = (data ?? []).map((o) => o.nombre as string)
 
     return (
         <div className="space-y-6">
@@ -28,7 +23,7 @@ export default async function ImportarEmpleadosPage() {
                     <Button variant="outline">← Volver a Usuarios</Button>
                 </Link>
             </div>
-            <ImportarEmpleados operaciones={operaciones} />
+            <ImportarEmpleados />
         </div>
     )
 }

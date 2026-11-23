@@ -18,6 +18,21 @@ import {
 } from '@/lib/asistencia'
 import { aplicarCambiosOperacionPendientes } from '@/lib/cambiosOperacion'
 import { fotosHabilitadas, guardarFotoCifrada } from '@/lib/fotos'
+import { getUserProfile } from '@/lib/auth'
+
+/**
+ * Operación de la cuenta con la que está abierta la tablet (ej.: maquila@… → su operación).
+ * Es la operación donde se marca; el colaborador no la elige ni la puede cambiar.
+ * null si la tablet no tiene sesión o la cuenta no tiene operación (administrador).
+ */
+async function operacionDelDispositivo(): Promise<string | null> {
+    try {
+        const perfil = await getUserProfile()
+        return perfil?.operacion_nombre ?? null
+    } catch {
+        return null
+    }
+}
 
 export async function validarCedula(cedula: string) {
     if (!cedula) return { success: false, error: 'Cédula vacía' }
@@ -46,13 +61,17 @@ export async function validarCedula(cedula: string) {
     if (usuario.status === 'inactivo') {
         return { success: false, error: 'Usuario inactivo. No puede registrar asistencias.' }
     }
+    // Se marca en la operación de la tablet; si la tablet no tiene una, en la de la ficha.
+    const operacionTablet = await operacionDelDispositivo()
     return {
         success: true,
         data: {
             id: usuario.id as string,
             nombre: usuario.nombre as string,
             status: usuario.status as string,
-            operacion: (usuario.operacion as string | null) ?? null,
+            operacion: operacionTablet ?? ((usuario.operacion as string | null) ?? null),
+            /** Operación de la ficha del colaborador (puede estar vacía si se importó sin operación). */
+            operacionFicha: (usuario.operacion as string | null) ?? null,
             // ¿Ya autorizó el tratamiento de sus datos personales y biométricos?
             autorizoDatos: !!usuario.autorizacion_datos_en,
             // ¿El sistema está guardando fotos? (si no, la foto se descarta como antes)
@@ -157,15 +176,26 @@ export async function registrarAsistenciaAPI(input: RegistrarAsistenciaInput): P
             return { success: false, error: validacion.error ?? 'Cédula no válida.', definitivo: true }
         }
         const usuario = validacion.data
-        // La operación es SIEMPRE la de la ficha del colaborador (la fija el administrador).
-        // El colaborador no la elige al marcar.
+        // La operación la pone la cuenta de la tablet (validarCedula ya la resolvió);
+        // lo que envíe la pantalla se ignora. El colaborador no la elige.
         const operacion = usuario.operacion
         if (!operacion) {
             return {
                 success: false,
                 definitivo: true,
-                error: 'No tienes una operación asignada. Pide a tu coordinador que la asigne antes de marcar.',
+                error: 'Esta tablet no tiene una operación asignada. Inicia sesión con la cuenta de la operación.',
             }
+        }
+        // Colaborador sin operación en su ficha (p. ej. importado desde Excel):
+        // queda con la operación de la tablet donde marca por primera vez.
+        if (!usuario.operacionFicha) {
+            const supabase = await createClient()
+            const { error: errOp } = await supabase
+                .from('usuarios')
+                .update({ operacion })
+                .eq('id', input.id)
+                .is('operacion', null)
+            if (errOp) console.error('[registrarAsistencia] asignar operación:', errOp.message)
         }
 
         const { jornada: activa, cierreAutomatico } = await jornadaActivaVigente(input.id, momento)

@@ -20,12 +20,12 @@ export interface ResultadoImportacion {
  * POST /api/empleados/importar (solo administrador)
  * FormData:
  *   archivo                 .xlsx
- *   operacion               operación para las filas sin columna OPERACION
  *   accion                  'revisar' (vista previa, no guarda nada) | 'importar'
  *   incluir_mismo_nombre    '1' = crear también los que tienen el mismo nombre que otro colaborador
  *   actualizar_existentes   '1' = actualizar cargo, salario, fecha de ingreso y nacimiento de los ya registrados
  *   reactivar_inactivos     '1' = pasar a activo a los ya registrados que estén inactivos
- *   operaciones_por_fila    JSON { cedula: operación } elegidas fila por fila en la vista previa
+ * La operación no se elige aquí: si el archivo no trae columna OPERACION, el colaborador
+ * toma la de la tablet (cuenta de la operación) donde marque por primera vez.
  * La operación de los ya registrados NO se cambia aquí (se usa "Cambiar operación").
  */
 export async function POST(request: NextRequest) {
@@ -47,7 +47,6 @@ export async function POST(request: NextRequest) {
     }
 
     const accion = form.get('accion') === 'importar' ? 'importar' : 'revisar'
-    const operacionElegida = ((form.get('operacion') as string) ?? '').trim() || null
     const incluirMismoNombre = form.get('incluir_mismo_nombre') === '1'
     const actualizarExistentes = form.get('actualizar_existentes') === '1'
     const reactivarInactivos = form.get('reactivar_inactivos') === '1'
@@ -68,23 +67,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'El archivo no tiene filas con colaboradores.' }, { status: 400 })
     }
 
-    // Operación elegida fila por fila en la vista previa (tiene prioridad sobre el archivo)
-    try {
-        const porFila = JSON.parse(((form.get('operaciones_por_fila') as string) || '{}')) as Record<string, string>
-        for (const f of lectura.filas) {
-            if (typeof porFila[f.cedula] === 'string' && porFila[f.cedula]) f.operacion = porFila[f.cedula]
-        }
-    } catch {
-        return NextResponse.json({ error: 'Datos de operaciones por fila no válidos.' }, { status: 400 })
-    }
-
     const supabase = await createClient()
 
     const { data: ops } = await supabase.from('operaciones').select('nombre')
     const operaciones = (ops ?? []).map((o) => o.nombre as string)
-    if (operacionElegida && !operaciones.includes(operacionElegida)) {
-        return NextResponse.json({ error: 'La operación elegida no existe.' }, { status: 400 })
-    }
 
     const existentes: EmpleadoBD[] = []
     for (let desde = 0; desde < 100000; desde += 1000) {
@@ -97,7 +83,7 @@ export async function POST(request: NextRequest) {
         if (!data || data.length < 1000) break
     }
 
-    const filas = revisarFilas(lectura.filas, existentes, operaciones, operacionElegida)
+    const filas = revisarFilas(lectura.filas, existentes, operaciones)
 
     if (accion === 'revisar') {
         return NextResponse.json({ filas, tieneColumnaOperacion: lectura.tieneColumnaOperacion } satisfies ResultadoImportacion)
@@ -162,7 +148,6 @@ export async function POST(request: NextRequest) {
         detalle: {
             archivo: archivo.name,
             filas: filas.length,
-            operacion_por_defecto: operacionElegida,
             creados,
             actualizados,
             reactivados,
