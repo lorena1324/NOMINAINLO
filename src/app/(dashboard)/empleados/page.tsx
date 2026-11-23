@@ -45,6 +45,13 @@ export default async function EmpleadosPage() {
                     <p className="text-muted-foreground mt-1">Directorio y creación de personal operativo y administrativo</p>
                 </div>
                 <div className="flex flex-wrap gap-2 justify-end">
+                    {profile.rol === 'admin' && (
+                        <Link href="/empleados/importar">
+                            <Button className="bg-emerald-600 hover:bg-emerald-700">
+                                ⬆ Importar personal (Excel)
+                            </Button>
+                        </Link>
+                    )}
                     {/* Plantilla de colaboradores (activos e inactivos) para cruce con RRHH */}
                     <a href="/api/reportes/colaboradores" target="_blank" rel="noreferrer">
                         <Button variant="outline" className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
